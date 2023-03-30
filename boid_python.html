@@ -1,0 +1,278 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Boids Simulation</title>
+        <style>
+          body {
+            margin: 0;
+          }
+          .button{
+              background-color: #606060;
+              border: none;
+              color: white;
+              padding: 10px 32px;
+              font-size: 16px;
+              margin: 4px 2px;
+              cursor: pointer;
+          }
+          .slider{
+              -webkit-appearance: none;
+              width: 80px;
+              height: 6px;
+              border-radius: 5px;
+              background: #d3d3d3;
+              outline: none;
+              opacity: 0.7;
+              -webkit-transition: .2s;
+              transition: opacity .2s;
+          }
+          canvas {
+              display: block;
+          }
+	    </style>
+      <py-config type="json">
+        {
+          "packages":["numpy"]
+        }
+      </py-config>
+    </head>
+    <body>
+      <button class="py-button" py-click="run()">Run/Pause</button>
+	    <button class="py-button" py-click="reset_boids()">Restart</button>
+      Parameter 01<input type = "range" min = "0" max = "1000" value = "0" id = "Slider01" class = "py-slider"> <span id = "SliderValue01">0.0</span>
+        <script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+        <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+        <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+        <link
+            rel="stylesheet"
+            href="https://pyscript.net/latest/pyscript.css"
+        /> 
+        <py-script>
+            from pyodide.ffi import create_proxy, to_js
+            from js import window
+            from js import Math
+            from js import THREE
+            from js import Object
+            from js import document
+            import asyncio
+            import js, pyodide
+
+            scene = THREE.Scene.new()
+            setcolor = "#bbbbbb"
+            scene.background = THREE.Color.new(setcolor)
+            
+            renderer = THREE.WebGLRenderer.new()
+            renderer.antialias = True
+            renderer.setSize(window.innerWidth, window.innerHeight)
+            document.body.appendChild( renderer.domElement )
+            
+            camera = THREE.PerspectiveCamera.new(75, window.innerWidth / window.innerHeight, 0.1, 1000.0 )
+            camera.position.set(40,40,45)
+            
+            controls = THREE.OrbitControls.new(camera, renderer.domElement)
+            controls.listenToKeyEvents(window)
+
+            def window_onsize(event):
+              camera.aspect = window.innerWidth / window.innerHeight
+              camera.updateProjectionMatrix()
+              renderer.setSize( window.innerWidth, window.innerHeight )
+
+            window.onresize = window_onsize
+            scene.pause = True
+            
+            # ================ Light setting ====================
+
+            ambientLight = THREE.AmbientLight.new(0xaaaaaa)
+            scene.add(ambientLight)
+
+            dirLight = THREE.DirectionalLight.new(0xffffff)
+            dirLight.position.set(1,1,1)
+            dirLight.castShadow = True
+            scene.add(dirLight)
+
+            lightBack = THREE.PointLight.new(0x0FFFFF, 1)
+            lightBack.position.set(0, -3, -1)
+            scene.add(lightBack)
+            
+            # ===========Creating Bound Box ============
+
+            ## You can modify the size of box
+            boundRange = 25
+
+            bound_material = THREE.MeshStandardMaterial.new()
+            bound_material.color = THREE.Color.new(0x444488)
+            bound_material.transparent = True
+            bound_material.opacity = 0.1
+
+            edge_material = THREE.LineBasicMaterial.new()
+            edge_material.color = THREE.Color.new(0xfffffff)
+            
+            bound = THREE.Mesh.new(THREE.BoxGeometry.new(boundRange * 2, boundRange * 2, boundRange * 2), bound_material)
+            edges = THREE.LineSegments.new(THREE.EdgesGeometry.new(THREE.BoxGeometry.new(boundRange * 2, boundRange * 2, boundRange * 2)), )
+
+            scene.add(bound)
+            scene.add(edges)
+            
+            #===================== CORE =====================
+
+            import numpy as np 
+            import math
+            boidsP = None # Position
+            boidsV = None # Velocity
+            boidsN = 0    # number
+            boidsShapes = []
+
+            neighbors = []
+            neighborN = 5
+
+            def create_boids(num):
+              global boidsN, boidsP, boidsV, boidsShapes
+              boidsN = num  
+              boidsP = -np.random.rand(num, 3) * (boundRange * 2) + boundRange 
+              boidsV = -np.random.rand(num, 3) * 3 + 1.5
+
+              for i in range(boidsN):
+                neighbors.append([])
+              
+              for i in range(num):
+                geometry = THREE.CylinderGeometry.new(0.0,0.75,2.25,4,1)
+                material = THREE.MeshPhongMaterial.new()
+                material.color = THREE.Color.new(0x993333)
+                material.flatShading = True
+                boidShape = THREE.Mesh.new(geometry, material)
+                boidsShapes.append(boidShape)
+                scene.add(boidShape)
+
+            def reset_boids():
+              global boidsP, boidsV, boidsN, boundRange
+              boidsP = -np.random.rand(boidsN, 3) * (boundRange * 2) + boundRange 
+              boidsV = -np.random.rand(boidsN, 3) * 3 + 1.5
+
+              neighbors = []
+              for i in range(boidsN):
+                neighbors.append([])
+            
+
+            def draw_boids(): ## Sync boidData and boidShape
+              global boidsV, boidsShapes
+              for i in range(boidsN):
+                boidsShapes[i].position.set(boidsP[i][0], boidsP[i][1], boidsP[i][2])
+                
+                ## TODO Update rotation to align the boid heading direction with its velocity
+                ## Hint : boidsShapes[i].setRotationFromAxisAngle(THREE.Vector3.new(axis[0], axis[1], axis[2]), angle) (Find the axis and angle)
+            
+            def find_neighbors():
+              global boidsV, neighbors, neighborN
+              neighbors = []
+              for i in range(boidsN):
+                neighbors.append([])
+
+              for i in range(boidsN):
+                for j in range(boidsN):
+                  if i != j:
+                    neighbors[i].append((j, np.linalg.norm(boidsP[i] - boidsP[j])))
+
+              for i in range(boidsN):
+                neighbors[i].sort(key=lambda x:x[1])
+                neighbors[i] = [item[0] for item in neighbors[i][:neighborN]]
+
+            ## Separation
+            def rule1(pr, avoid_factor):
+              global boidsV, neighbors
+              vrule1 = np.zeros((boidsN, 3))
+
+              for i in range(boidsN):
+                for neighbor in neighbors[i]:
+                  d = boidsP[i] - boidsP[neighbor]
+                  if np.linalg.norm(d) < pr:
+                    vrule1[i] = np.add(vrule1[i], d)
+
+              vrule1 *= avoid_factor
+              return vrule1
+
+            ##Alignment
+            def rule2(align_factor):
+              global boidsV, neighbors, neighborN
+              vrule2 = np.zeros((boidsN, 3))
+
+              for i in range(boidsN):
+                for neighbor in neighbors[i]:
+                  vrule2[i] += boidsV[neighbor]
+
+              vrule2 /= neighborN
+
+              vrule2 *= align_factor
+
+              return vrule2
+
+            def rule3(cohesion_factor):
+              global boidsV, neighbors, neighborN
+              p = np.zeros((boidsN, 3))
+              vrule3 = np.zeros((boidsN, 3))
+
+              for i in range(boidsN):
+                for neighbor in neighbors[i]:
+                  p[i] += boidsP[neighbor]
+
+                p[i] /= neighborN
+                vrule3[i] = boidsP[i] - p[i]
+
+              vrule3 *= cohesion_factor
+
+              return vrule3
+
+
+            def hard_boundary():
+              global boidsP, boidsN
+              
+              for i in range(boidsN):
+                boidsP[i] = np.minimum(np.maximum(boidsP[i], [-boundRange, -boundRange, -boundRange]), [boundRange, boundRange, boundRange])
+              
+
+            def update_boids():
+              global boidsP, boidsV, boidsN, neighbors
+              
+              ## TODO Implement the velocity update rules
+
+              find_neighbors()
+              ## print(neighbors)
+
+              vel1 = rule1(boundRange / 20, 1)
+              vel2 = rule2(0.00001)
+              vel3 = rule3(0.001)
+              
+              ## Dummy (Remove this line) 
+              ## boidsV = -np.random.rand(boidsN, 3) * 2.0 + 1.0
+              boidsV += vel1 ##+ vel3
+              hard_boundary()
+              boidsP += boidsV
+
+            def run():
+              scene.pause = not scene.pause
+
+            def animate():
+              if not scene.pause:
+                update_boids()
+                draw_boids()
+              
+              renderer.render(scene, camera)
+
+            ## Example code for slider
+            def slider01_function(event):
+              value = int(Element("Slider01").value) * 0.01
+              document.getElementById("SliderValue01").innerHTML = str(round(value, 2))
+            document.getElementById("Slider01").oninput = slider01_function
+
+
+            async def main():
+              boid_num = 50
+              create_boids(boid_num)
+              draw_boids()
+              while True:         
+                animate()
+                await asyncio.sleep(0.0001)
+            asyncio.ensure_future(main())
+        </py-script>
+        </body>
+</html>
