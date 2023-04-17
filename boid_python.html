@@ -41,14 +41,21 @@
       <button class="py-button" py-click="run()">Run/Pause</button>
 	    <button class="py-button" py-click="reset_boids()">Restart</button>
       <br>
-      <input type = "range" min = "0" max = "100" value = "40" id = "Slider01" class = "py-slider"> <span id = "SliderValue01">10.0</span> Protected Range
-      <t>
-      <input type = "range" min = "0" max = "50" value = "50" id = "Slider02" class = "py-slider"> <span id = "SliderValue02">0.5</span> Avoid factor
+      <button style="width:200px">Protected range</button>
+      <input type = "range" min = "0" max = "100" value = "40" id = "Slider01" class = "py-slider"> <span id = "SliderValue01">10.0</span>
       <br>
-      <input type = "range" min = "0" max = "50" value = "3" id = "Slider03" class = "py-slider"> <span id = "SliderValue03">0.03</span> Align_factor
-      <input type = "range" min = "0" max = "50" value = "1" id = "Slider04" class = "py-slider"> <span id = "SliderValue04">0.01</span> Cohesion factor
+      <button style="width:200px">Avoid factor</button>
+      <input type = "range" min = "0" max = "50" value = "50" id = "Slider02" class = "py-slider"> <span id = "SliderValue02">0.5</span>
       <br>
-      <input type = "range" min = "0" max = "100" value = "20" id = "Slider05" class = "py-slider"> <span id = "SliderValue05">20.0</span> Visible range
+      <button style="width:200px">Align factor </button>
+      <input type = "range" min = "0" max = "5" value = "1" id = "Slider03" class = "py-slider"> <span id = "SliderValue03">0.01</span>
+      <br>
+      <button style="width:200px">Cohesion factor</button>
+      <input type = "range" min = "0" max = "5" value = "1" id = "Slider04" class = "py-slider"> <span id = "SliderValue04">0.01</span>
+      <br>
+      <button style="width:200px">Visible range</button>
+      <input type = "range" min = "0" max = "100" value = "20" id = "Slider05" class = "py-slider"> <span id = "SliderValue05">20.0
+      </span>
         <script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
         <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
         <script defer src="https://pyscript.net/latest/pyscript.js"></script>
@@ -139,6 +146,11 @@
             boidsN = 0    # number
             boidsShapes = []
 
+            predP = None
+            predV = None
+            predN = 0
+            predShapes = []
+
             def create_boids(num):
               global boidsN, boidsP, boidsV, boidsShapes
               boidsN = num  
@@ -154,10 +166,27 @@
                 boidsShapes.append(boidShape)
                 scene.add(boidShape)
 
+              global predN, predP, predV, predShapes
+              predN = 1
+              predP = -np.random.rand(predN, 3) * (boundRange * 2) + boundRange 
+              predV = -np.random.rand(predN, 3) * 3 + 1.5
+              for i in range(predN):
+                geometry = THREE.ConeGeometry.new(1.0, 5.0, 6)
+                material = THREE.MeshPhongMaterial.new()
+                material.color = THREE.Color.new(0x333399)
+                material.flatShading = True
+                predShape = THREE.Mesh.new(geometry, material)
+                predShapes.append(predShape)
+                scene.add(predShape)
+
             def reset_boids():
               global boidsP, boidsV, boidsN, boundRange
               boidsP = -np.random.rand(boidsN, 3) * (boundRange * 2) + boundRange 
               boidsV = -np.random.rand(boidsN, 3) * 3 + 1.5
+
+              global predP, predV, predN
+              predP = -np.random.rand(predN, 3) * (boundRange * 2) + boundRange 
+              predV = -np.random.rand(predN, 3) * 3 + 1.5
             
 
             def draw_boids(): ## Sync boidData and boidShape
@@ -167,11 +196,22 @@
                 
                 ## TODO Update rotation to align the boid heading direction with its velocity
                 ## Hint : boidsShapes[i].setRotationFromAxisAngle(THREE.Vector3.new(axis[0], axis[1], axis[2]), angle) (Find the axis and angle)
+
                 dir = boidsV[i] / np.linalg.norm(boidsV[i])
                 axis = np.cross([0, 1, 0], dir)
                 axis /= np.linalg.norm(axis)
                 angle = np.arccos(np.dot([0, 1, 0], dir))
                 boidsShapes[i].setRotationFromAxisAngle(THREE.Vector3.new(axis[0], axis[1], axis[2]), angle)
+
+              global predV, predShapes
+              for i in range(predN):
+                predShapes[i].position.set(predP[i][0], predP[i][1], predP[i][2])
+                
+                dir = predV[i] / np.linalg.norm(predV[i])
+                axis = np.cross([0, 1, 0], dir)
+                axis /= np.linalg.norm(axis)
+                angle = np.arccos(np.dot([0, 1, 0], dir))
+                predShapes[i].setRotationFromAxisAngle(THREE.Vector3.new(axis[0], axis[1], axis[2]), angle)
 
 
             def FindNeighbors(b, visible_range):
@@ -185,6 +225,7 @@
 
               return Nb
 
+            # Separation
             def rule1(b, Nb, protected_range, avoid_factor):
               global boidsP
               v = np.zeros((1, 3))
@@ -197,6 +238,7 @@
               v *= avoid_factor
               return v
 
+            # Alginment
             def rule2(b, Nb, align_factor):
               global boidsV
               v = np.zeros((1, 3))
@@ -209,6 +251,7 @@
               v *= align_factor
               return v
 
+            # Cohesion
             def rule3(b, Nb, cohesion_factor):
               global boidsP
               p = np.zeros((1, 3))
@@ -223,11 +266,30 @@
               v *= cohesion_factor
               return v
 
+            # Predator
+            def rule4(b, predator_range, predator_factor):
+              global boidsP
+              global predN, predP
+
+              v = np.zeros((1, 3))
+              for p in range(predN):
+                d = boidsP[b] - predP[p]
+                if np.linalg.norm(d) < predator_range:
+                  v = np.add(v, d / np.power(np.linalg.norm(d), 2))
+
+              v *= predator_factor
+              return v
+
+
             def hard_boundary():
               global boidsP, boidsN
 
               for b in range(boidsN):
                 boidsP[b] = np.minimum(np.maximum(boidsP[b], [-boundRange, -boundRange, -boundRange]), [boundRange, boundRange, boundRange])
+
+              global predP
+              for p in range(predN):
+                predP[p] = np.minimum(np.maximum(predP[p], [-boundRange, -boundRange, -boundRange]), [boundRange, boundRange, boundRange])
 
             def soft_boundary(push_factor):
               global boidsP, boidsN
@@ -242,12 +304,23 @@
                 if boidsP[b][2] < -softRange: boidsV[b][2] += push_factor
                 elif boidsP[b][2] > softRange: boidsV[b][2] -= push_factor
 
+              global predP
+              for p in range(predN):
+                if predP[p][0] < -softRange: predV[p][0] += push_factor
+                elif predP[p][0] > softRange: predV[p][0] -= push_factor
+
+                if predP[p][1] < -softRange: predV[p][1] += push_factor
+                elif predP[p][1] > softRange: predV[p][1] -= push_factor
+
+                if predP[p][2] < -softRange: predV[p][2] += push_factor
+                elif predP[p][2] > softRange: predV[p][2] -= push_factor
+
             def limit_speed(lim):
               global boidsV, boidsN
 
               for b in range(boidsN):
-                if np.linalg.norm(boidsP[b]) > lim:
-                  boidsP[b] = boidsP[b] / np.linalg.norm(boidsP[b]) * lim
+                if np.linalg.norm(boidsV[b]) > lim:
+                  boidsV[b] = boidsV[b] / np.linalg.norm(boidsV[b]) * lim
 
             def update_boids():
               global boidsP, boidsV, boidsN, protected_range
@@ -266,17 +339,22 @@
                 vel1 = rule1(b, Nb, protected_range, avoid_factor)
                 vel2 = rule2(b, Nb, align_factor)
                 vel3 = rule3(b, Nb, cohesion_factor)
-
+                
                 boidsV[b] = np.add(boidsV[b], vel1)
                 boidsV[b] = np.add(boidsV[b], vel2)
                 boidsV[b] = np.add(boidsV[b], vel3)
-              limit_speed(boundRange * 1.2)
 
-              ## Dummy (Remove this line) 
-              ##boidsV = -np.random.rand(boidsN, 3) * 2.0 + 1.0
-              ## boidsV += vel1 + vel3 ## + vel2 + vel3
+                vel4 = rule4(b, visible_range, 1)
+                boidsV[b] = np.add(boidsV[b], vel4)
+
+              limit_speed(boundRange * 2)
+
               boidsP += boidsV
-              soft_boundary(0.5)
+
+              global predP, predV
+              predP += predV
+
+              soft_boundary(0.1)
               hard_boundary()
               
               
