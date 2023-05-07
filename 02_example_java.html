@@ -35,19 +35,20 @@
 
 <body>
 
-	<button class="button" onclick="run()">Run/Pause</button>
-	<button class="button" onclick="reset()">Restart</button>
-	
-	Parameter 01<input type = "range" min = "0" max = "1000" value = "0" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.0</span>
+    <button class="button" onclick="run()">Run/Pause</button>
+    <button class="button" onclick="reset()">Restart</button>
+    <button class="button" onclick="addsoftobject()">Add Soft Object</button>
+    <button class="button" onclick="addrigidobject()">Add Rigid Object</button>
 
-	<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    Parameter 01<input type = "range" min = "0" max = "1000" value = "0" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.0</span>
 
-	<script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
-	<script>
-	</script>
-	<script>
-		
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+    <script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+    <script>
+    </script>
+    <script>
 		var scene = new THREE.Scene();
 		scene.background = new THREE.Color(0xbbbbbb);
 
@@ -67,7 +68,9 @@
 			renderer.setSize(window.innerWidth, window.innerHeight);
 		};
 
-		function run() {scene.paused = !scene.paused;}
+		function run() {
+            scene.paused = !scene.paused;
+        }
 		
 		scene.paused = true;
 
@@ -79,147 +82,240 @@
 		dirLight.castShadow = true;
 		scene.add(dirLight);
 
-    var lightBack = new THREE.PointLight(0x0fffff, 1);
-    lightBack.position.set(0,-3,-1)
-    scene.add(lightBack)
+        var lightBack = new THREE.PointLight(0x0fffff, 1);
+        lightBack.position.set(0,-3,-1)
+        scene.add(lightBack)
 
-		var ground = new THREE.Mesh(new THREE.PlaneBufferGeometry(20,20,1,1), new THREE.MeshPhongMaterial({ color: 0Xa0adaf, shininess:155} ));	
-		ground.rotation.x = -Math.PI * 0.5
-    var grid = new THREE.GridHelper(20,20);
-    grid.material.opacity = 1.0
-    grid.material.transparent = true
-    grid.position.set(0,0.002,0)
-    
-		scene.add(grid);
-		scene.add(ground);
-		
-    class SoftBodyObject {
-      constructor(file, _scene, start){
-        // this.init_positions
-        this.init_positions = file['verts']
-        this.positions = []
-        this.velocities = []
+        var ground = new THREE.Mesh(new THREE.PlaneBufferGeometry(20,20,1,1), new THREE.MeshPhongMaterial({ color: 0Xa0adaf, shininess:155} ));	
+        ground.rotation.x = -Math.PI * 0.5
+        var grid = new THREE.GridHelper(20,20);
+        grid.material.opacity = 1.0
+        grid.material.transparent = true
+        grid.position.set(0,0.002,0)
 
-        for(let i = 0; i < this.init_positions.length / 3; i++)
-        {
-          this.positions.push(new THREE.Vector3(this.init_positions[3 * i], this.init_positions[3 * i + 1], this.init_positions[3 * i + 2]));
-          this.velocities.push(new THREE.Vector3(0,0,0));
-        }
-
-        this.vertices = new Float32Array(this.init_positions );
-        this.indices = new Uint16Array(file['tetSurfaceTriIds']);
-        this.edgeindices = new Uint16Array(file['tetEdgeIds']);
-
-        this.geometry = new THREE.BufferGeometry();
-        this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
-        this.geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
-
-        this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({color : 0x00f00f, flatShading : true}));
-        this.mesh.geometry.computeVertexNormals();
-        _scene.add(this.mesh);
-
-        this.edge_geometry =  new THREE.BufferGeometry();
-        this.edge_geometry.setIndex(new THREE.BufferAttribute(this.edgeindices, 1));
-        this.edge_geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
-
-        this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({color :0xffffff}));
-        _scene.add(this.edges);
-
-        this.h = 1
-        this.n = parseInt(1 / this.h)
-        this.mass = 1
-        this.w = this.vertices.length / this.mass
-        this.k = 0.8
-
-        this.start = start
-
-        for (let i = 0; i < this.positions.length; i++)
-        {
-          this.positions[i] += this.start
-          this.velocities[i].add(new THREE.Vector3(0.00, 0.10, 0.00))
-        }
-
-      }
-
-      renderUpdate()
-      {
-        for(let i = 0; i < this.positions.length; i++)
-        {
-          this.vertices[i * 3] = this.positions[i].x;
-          this.vertices[i * 3 + 1] = this.positions[i].y;
-          this.vertices[i * 3 + 2] = this.positions[i].z;
-        }
-
-        this.mesh.geometry.computeVertexNormals();
-        this.mesh.geometry.attributes.position.needsUpdate = true;
-        this.mesh.geometry.computeBoundingSphere();
-
-        this.edges.geometry.computeVertexNormals();
-        this.edges.geometry.attributes.position.needsUpdate = true;
-        this.edges.geometry.computeBoundingSphere();
-
-      }
-
-      update()
-      {
-        // Dummy Velocity (Going Up)
-        for(let i = 0; i < this.positions.length; i++)
-          this.velocities[i] = new THREE.Vector3(0.0,0.01,0.0);
+        meshes = [];
         
-        // Dummy Position Update
-        for(let i = 0; i < this.positions.length; i++)
-        {
-          this.positions[i].add(this.velocities[i]);   
-        }
-        this.renderUpdate();
-      }
-
-      reset()
-      {
-        // Bunny Reset
-        this.positions = []
-        this.velocities = []
-
-        for(let i = 0; i < this.vertices.length / 3; i++)
-        {
-          this.positions.push(new THREE.Vector3(this.init_positions[3 * i], this.init_positions[3 * i + 1], this.init_positions[3 * i + 2]));
-          this.velocities.push(new THREE.Vector3(0,0,0));
-        }
-
-        this.renderUpdate();
-      }
-
-
-    };
-
-		function reset()
-    {
-      bunny.reset();
-    }
+        scene.add(grid);
+        scene.add(ground);
 		
-    function run()
-    {
-      scene.paused = !scene.paused;
-    }
+        class SoftBodyObject {
+            constructor(file, _scene, start) {
+                // this.init_positions
+                this.init_positions = file['verts']
+                this.positions = []
+                this.velocities = []
 
-		function animate() {
-			// controls.update();
-      if(!scene.paused)
-			{
-        bunny.update();
-      }
+                for(let i = 0; i < this.init_positions.length / 3; i++)
+                {
+                this.positions.push((new THREE.Vector3(this.init_positions[3 * i], this.init_positions[3 * i + 1], this.init_positions[3 * i + 2])).add(start));
+                this.velocities.push(new THREE.Vector3(0,0,0));
+                }
 
-			renderer.render(scene, camera);
-		  requestAnimationFrame(animate);
-      
-    }
+                this.vertices = new Float32Array(this.init_positions );
+                this.indices = new Uint16Array(file['tetSurfaceTriIds']);
+                this.edgeindices = new Uint16Array(file['tetEdgeIds']);
 
-		document.getElementById("Slider01").oninput = function() {
-			dist = Number(this.value) * 0.01;
-			document.getElementById("SliderValue01").innerHTML = dist.toFixed(2).toString();
-		}
+                this.geometry = new THREE.BufferGeometry();
+                this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
 
-    bunnyFile = {
+                this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({color : 0x00f00f, flatShading : true}));
+                this.mesh.geometry.computeVertexNormals();
+                _scene.add(this.mesh);
+
+                this.edge_geometry =  new THREE.BufferGeometry();
+                this.edge_geometry.setIndex(new THREE.BufferAttribute(this.edgeindices, 1));
+                this.edge_geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
+
+                this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({color :0xffffff}));
+                //_scene.add(this.edges);
+
+                this.h = 0.1;
+                this.n = parseInt(1 / this.h);
+                this.mass = 1;
+                this.w = this.vertices.length / this.mass;
+                this.k = 1;
+
+                this.start = start;
+
+                for (let i = 0; i < this.positions.length; i++) {
+                    this.positions[i].add(this.start);
+                    //this.velocities[i].add(new THREE.Vector3(0.00, 0.10, 0.00));
+                }
+
+                this.volume_indices = new Uint16Array(file['tetIds']);
+                this.volumes = [];
+
+                for (let i = 0; i < this.volume_indices.length / 4; i++) {
+                    var i0 = this.volume_indices[4 * i];
+                    var i1 = this.volume_indices[4 * i + 1];
+                    var i2 = this.volume_indices[4 * i + 2];
+                    var i3 = this.volume_indices[4 * i + 3];
+
+                    var x0 = this.positions[i0];
+                    var x1 = this.positions[i1];
+                    var x2 = this.positions[i2];
+                    var x3 = this.positions[i3];
+
+                    var volume = x1.clone().sub(x0);
+                    volume.cross(x2.clone().sub(x0));
+                    volume = volume.dot(x3.clone().sub(x0));
+
+                    this.volumes.push(volume);
+                }
+
+                this.lengths = [];
+                for (let i = 0; i < this.edgeindices.length / 2; i++) {
+                    var i0 = this.edgeindices[2 * i];
+                    var i1 = this.edgeindices[2 * i + 1];
+
+                    var x0 = this.positions[i0];
+                    var x1 = this.positions[i1];
+
+                    this.lengths.push(x0.distanceTo(x1));
+                }
+            }
+
+            renderUpdate() {
+                for(let i = 0; i < this.positions.length; i++) {
+                    this.vertices[i * 3] = this.positions[i].x;
+                    this.vertices[i * 3 + 1] = this.positions[i].y;
+                    this.vertices[i * 3 + 2] = this.positions[i].z;
+                }
+
+                this.mesh.geometry.computeVertexNormals();
+                this.mesh.geometry.attributes.position.needsUpdate = true;
+                this.mesh.geometry.computeBoundingSphere();
+
+                this.edges.geometry.computeVertexNormals();
+                this.edges.geometry.attributes.position.needsUpdate = true;
+                this.edges.geometry.computeBoundingSphere();
+
+            }
+
+            update() {
+                // Dummy Velocity (Going Up)
+                for (let n = 0; n < this.n; n++) {
+                    for (let i = 0; i < this.positions.length; i++) {
+                        this.velocities[i].add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * this.h));
+                    }
+                
+                    var p = this.positions.slice()
+
+                    // Dummy Position Update
+                    for (let i = 0; i < this.positions.length; i++) {
+                        this.positions[i].add(this.velocities[i].multiplyScalar(this.h));   
+                    }
+
+                    for (let i = 0; i < this.volumes.length; i++) {
+                        var i0 = this.volume_indices[4 * i];
+                        var i1 = this.volume_indices[4 * i + 1];
+                        var i2 = this.volume_indices[4 * i + 2];
+                        var i3 = this.volume_indices[4 * i + 3];
+
+                        var x0 = this.positions[i0];
+                        var x1 = this.positions[i1];
+                        var x2 = this.positions[i2];
+                        var x3 = this.positions[i3];
+
+                        var c0 = (x3.clone().sub(x1.clone())).cross(x2.clone().sub(x1));
+                        var c1 = (x2.clone().sub(x0.clone())).cross(x3.clone().sub(x0));
+                        var c2 = (x3.clone().sub(x1.clone())).cross(x1.clone().sub(x0));
+                        var c3 = (x1.clone().sub(x2.clone())).cross(x2.clone().sub(x0));
+
+                        var V6 = (x1.clone().sub(x0.clone())).cross(x2.clone().sub(x0.clone()));
+                        V6 = V6.dot(x3.clone().sub(x0.clone()));
+
+                        var l = (this.volumes[i] - V6) / (4 * (c0.dot(c0) + c1.dot(c1) + c2.dot(c2) + c3.dot(c3)));
+
+                        x0.add(c0.multiplyScalar(this.k * l));
+                        x1.add(c1.multiplyScalar(this.k * l));
+                        x2.add(c2.multiplyScalar(this.k * l));
+                        x3.add(c3.multiplyScalar(this.k * l));
+                    }
+
+                    for (let i = 0; i < this.lengths.length; i++) {
+                        var i0 = this.edgeindices[2 * i];
+                        var i1 = this.edgeindices[2 * i + 1];
+
+                        var x0 = this.positions[i0];
+                        var x1 = this.positions[i1];
+
+                        var l = x0.distanceTo(x1);
+
+                        var x0tox1 = (x0.clone().sub(x1.clone()));
+
+                        x0.add(x0tox1.clone().multiplyScalar(-this.k * 0.5 * (l - this.lengths[i]) / l));
+                        x1.add(x0tox1.clone().multiplyScalar( this.k * 0.5 * (l - this.lengths[i]) / l));
+                    }
+
+                    for (let i = 0; i < this.velocities.length; i++) {
+                        this.velocities[i] = (this.positions[i].clone().sub(p[i])).multiplyScalar(1 / this.h);
+                    }
+
+                    for (let i = 0; i < this.positions.length; i++) {
+                        if (this.positions[i].y < 0.0)
+                            this.positions[i].y = 0.0
+                    }
+                }
+                this.renderUpdate();
+            }
+
+            reset() {
+                // Bunny Reset
+                this.positions = []
+                this.velocities = []
+
+                for(let i = 0; i < this.vertices.length / 3; i++)
+                {
+                this.positions.push((new THREE.Vector3(this.init_positions[3 * i], this.init_positions[3 * i + 1], this.init_positions[3 * i + 2])).add(this.start));
+                this.velocities.push(new THREE.Vector3(0,0,0));
+                }
+
+                this.renderUpdate();
+            }
+        };
+
+        function reset() {
+            for (let i = 0; i < meshes.length; i++) {
+                meshes[i].reset();
+            }
+            bunny.reset();
+        }
+            
+        function run() {
+            scene.paused = !scene.paused;
+        }
+
+        function addsoftobject() {
+            var soft = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5));
+            soft.reset();
+            meshes.push(soft);
+        }
+
+        function addrigidobject() {
+
+        }
+
+        function animate() {
+            // controls.update();
+            if(!scene.paused) {
+                for (let i = 0; i < meshes.length; i++) {
+                    meshes[i].update();
+                }
+                bunny.update();
+            }
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);  
+        }
+
+        document.getElementById("Slider01").oninput = function() {
+            dist = Number(this.value) * 0.01;
+            document.getElementById("SliderValue01").innerHTML = dist.toFixed(2).toString();
+        }
+
+        bunnyFile = {
                   "name" : "bunnyTets",
                   "verts" : [
                     0.1667, 0.0320, 0.0191, 0.1474, 0.0432, 0.1918, 0.2237, 0.0267, 0.1427, -0.0349, 0.0627, 0.1842, -0.1422, 0.0246, 0.1666, -0.1443, 0.0308, 0.2591, -0.1520, 0.0275, 0.0863, -0.1235, 0.0481, -0.0230,
@@ -798,13 +894,14 @@
                     235,237,253,249,235,253,248,236,252,237,249,253,259,256,275,256,259,278,275,256,
                     278,259,275,278,292,287,308,287,292,312,308,287,312,297,292,312,292,297,316,292,
                     308,312,312,292,316,297,312,316],
-                };
-    // document.write(bunnyFile['verts']);
-    var bunny = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(0,0,0));
-    // scene.add(bunny.mesh);
+        };
+        // document.write(bunnyFile['verts']);
+        var bunny = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(0,1,0));
+        bunny.reset();
+        // scene.add(bunny.mesh);
 
-    // scene.add(bunny.Mesh)
-		animate();
+        // scene.add(bunny.Mesh)
+        animate();
 	</script>
 </body>
 
