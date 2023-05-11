@@ -411,7 +411,7 @@
                 
                 var soft_j = softmeshes[j];
                 for (let k = 0; k < soft_i.surfaceindices.length; k++) {
-                  var p = soft_i.positions[soft_i.surfaceindices[k]];
+                  var p = soft_i.positions[soft_i.surfaceindices[k]].clone();
                   for (let l = 0; l < soft_j.indices.length / 3; l++) {
                     var i0 = soft_j.indices[3 * l];
                     var i1 = soft_j.indices[3 * l + 1];
@@ -420,6 +420,18 @@
                     var x0 = soft_j.positions[i0];
                     var x1 = soft_j.positions[i1];
                     var x2 = soft_j.positions[i2];
+
+                    var x0_p = p.clone().sub(x0);
+                    var N = x2.clone().sub(x0).cross(x1.clone().sub(x0));
+
+                    if (p.clone().dot(N) < 0) {
+                      var proj = p.clone().add(N.normalize().multiplyScalar(-x0_p.clone().dot(N)));
+
+                      // Check if proj is inside triangle
+
+                      // if so, update p to proj
+                    }
+                    //console.log(N);
                   }
                 }
               }
