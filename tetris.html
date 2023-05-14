@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>My first three.js app</title>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    .button{
+        background-color: #606060;
+        border: none;
+        color: white;
+        padding: 10px 32px;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+    }
+    .slider{
+        -webkit-appearance: none;
+        width: 80px;
+        height: 6px;
+        border-radius: 5px;
+        background: #d3d3d3;
+        outline: none;
+        opacity: 0.7;
+        -webkit-transition: .2s;
+        transition: opacity .2s;
+    }
+
+  </style>
+</head>
+
+<body>
+
+    <button class="button" onclick="run()">Run/Pause</button>
+    <button class="button" onclick="reset()">Restart</button>
+    <button class="button" onclick="addsoftobject()">Add Soft Object</button>
+    <button class="button" onclick="addrigidobject()">Add Rigid Object</button>
+
+    Time Step Size<input type = "range" min = "2" max = "100" value = "2" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.01</span>
+    Num Sub Steps<input type = "range" min = "1" max = "100" value = "100" id = "Slider02" class = "slider"> <span id = "SliderValue02">100</span>
+
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+    <script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+    <script>
+    </script>
+    <script>
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xbbbbbb);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(40, 40, 45);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.listenToKeyEvents(window); // optional
+
+    window.onresize = function() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    function run() {
+        scene.paused = !scene.paused;
+    }
+    
+    scene.paused = true;
+
+    // Light Setting 
+    // scene.add(new THREE.AmbientLight( 0xaaaaaa ));
+    
+    var dirLight = new THREE.DirectionalLight( 0xffffff);
+    dirLight.position.set(1,1,1);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    var lightBack = new THREE.PointLight(0x0fffff, 1);
+    lightBack.position.set(0,-3,-1)
+    scene.add(lightBack)
+
+    var ground = new THREE.Mesh(new THREE.PlaneBufferGeometry(20,20,1,1), new THREE.MeshPhongMaterial({ color: 0Xa0adaf, shininess:155} )); 
+    ground.rotation.x = -Math.PI * 0.5
+    var grid = new THREE.GridHelper(20,20);
+    grid.material.opacity = 1.0
+    grid.material.transparent = true
+    grid.position.set(0,0.002,0)
+
+    softmeshes = [];
+    rigidmeshes = [];
+    var softnum = 0;
+    var rigidnum = 0;
+    var scale = 0.3;
+
+    timestepsize = 0.01;
+    numstepsize = 100;
+    
+    scene.add(grid);
+    scene.add(ground);
+
+    class SoftBodyObject {
+        constructor(file, _scene, start, scale) {
+            // this.init_positions
+            this.init_positions = file['verts']
+            this.positions = []
+            this.velocities = []
+
+            for(let i = 0; i < this.init_positions.length / 3; i++)
+            {
+              this.positions.push((new THREE.Vector3(this.init_positions[3 * i] * scale, this.init_positions[3 * i + 1] * scale, this.init_positions[3 * i + 2] * scale)).add(start));
+              this.velocities.push(new THREE.Vector3(0,0,0));
+            }
+
+            this.vertices = new Float32Array(this.init_positions );
+            this.indices = new Uint16Array(file['tetSurfaceTriIds']);
+            this.edgeindices = new Uint16Array(file['tetEdgeIds']);
+
+            this.surfaceindices = new Uint16Array(file['tetSurfaceVertIds']);
+            this.surfacetetindices = new Uint16Array(file['surfaceTets']);
+
+            this.geometry = new THREE.BufferGeometry();
+            this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
+            this.geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
+
+            this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({color : Math.floor(Math.random()*16777215), flatShading : false}));
+            this.mesh.geometry.computeVertexNormals();
+            this.mesh.name = "Soft" + softnum;
+            softnum += 1;
+            _scene.add(this.mesh);
+
+            this.edge_geometry =  new THREE.BufferGeometry();
+            this.edge_geometry.setIndex(new THREE.BufferAttribute(this.edgeindices, 1));
+            this.edge_geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
+
+            this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({color :0xffffff}));
+            //_scene.add(this.edges);
+
+            this.h = 0.05;
+            this.n = parseInt(1 / this.h);
+            this.mass = 1;
+            this.w = this.vertices.length / this.mass;
+            this.k = 0.2;
+
+            this.start = start;
+
+            for (let i = 0; i < this.positions.length; i++) {
+                this.positions[i].add(this.start);
+                //this.velocities[i].add(new THREE.Vector3(0.00, 0.10, 0.00));
+            }
+
+            this.volume_indices = new Uint16Array(file['tetIds']);
+            this.volumes = [];
+
+            for (let i = 0; i < this.volume_indices.length / 4; i++) {
+                var i0 = this.volume_indices[4 * i];
+                var i1 = this.volume_indices[4 * i + 1];
+                var i2 = this.volume_indices[4 * i + 2];
+                var i3 = this.volume_indices[4 * i + 3];
+
+                var x0 = this.positions[i0];
+                var x1 = this.positions[i1];
+                var x2 = this.positions[i2];
+                var x3 = this.positions[i3];
+
+                var volume = x1.clone().sub(x0);
+                volume.cross(x2.clone().sub(x0));
+                volume = volume.dot(x3.clone().sub(x0));
+
+                this.volumes.push(volume);
+            }
+
+            this.lengths = [];
+            for (let i = 0; i < this.edgeindices.length / 2; i++) {
+                var i0 = this.edgeindices[2 * i];
+                var i1 = this.edgeindices[2 * i + 1];
+
+                var x0 = this.positions[i0];
+                var x1 = this.positions[i1];
+
+                this.lengths.push(x0.distanceTo(x1));
+            }
+
+            this.clicked = 0;
+        }
+
+        renderUpdate() {
+            for(let i = 0; i < this.positions.length; i++) {
+                this.vertices[i * 3] = this.positions[i].x;
+                this.vertices[i * 3 + 1] = this.positions[i].y;
+                this.vertices[i * 3 + 2] = this.positions[i].z;
+            }
+
+            this.mesh.geometry.computeVertexNormals();
+            this.mesh.geometry.attributes.position.needsUpdate = true;
+            this.mesh.geometry.computeBoundingSphere();
+
+            this.edges.geometry.computeVertexNormals();
+            this.edges.geometry.attributes.position.needsUpdate = true;
+            this.edges.geometry.computeBoundingSphere();
+
+        }
+
+        update() {
+            // Dummy Velocity (Going Up)
+            for (let n = 0; n < numstepsize; n++) {
+                if (this.clicked == 0) {
+                  for (let i = 0; i < this.positions.length; i++) {
+                      this.velocities[i].add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * timestepsize));
+                  }
+                }
+                else {
+                  for (let i = 0; i < this.positions.length; i++) {
+                      this.velocities[i] = new THREE.Vector3(0, 0, 0);
+                  }
+                }
+
+                var p = this.positions.slice()
+
+                // Dummy Position Update
+                for (let i = 0; i < this.positions.length; i++) {
+                    this.positions[i].add(this.velocities[i].clone().multiplyScalar(timestepsize));   
+                }
+
+                for (let i = 0; i < this.volumes.length; i++) {
+                    var i0 = this.volume_indices[4 * i];
+                    var i1 = this.volume_indices[4 * i + 1];
+                    var i2 = this.volume_indices[4 * i + 2];
+                    var i3 = this.volume_indices[4 * i + 3];
+
+                    var x0 = this.positions[i0];
+                    var x1 = this.positions[i1];
+                    var x2 = this.positions[i2];
+                    var x3 = this.positions[i3];
+
+                    var c0 = (x3.clone().sub(x1.clone())).cross(x2.clone().sub(x1));
+                    var c1 = (x2.clone().sub(x0.clone())).cross(x3.clone().sub(x0));
+                    var c2 = (x3.clone().sub(x1.clone())).cross(x1.clone().sub(x0));
+                    var c3 = (x1.clone().sub(x2.clone())).cross(x2.clone().sub(x0));
+
+                    var V6 = (x1.clone().sub(x0.clone())).cross(x2.clone().sub(x0.clone()));
+                    V6 = V6.dot(x3.clone().sub(x0.clone()));
+
+                    var l = (this.volumes[i] - V6) / (4 * (c0.dot(c0) + c1.dot(c1) + c2.dot(c2) + c3.dot(c3)));
+
+                    x0.add(c0.multiplyScalar(this.k * l));
+                    x1.add(c1.multiplyScalar(this.k * l));
+                    x2.add(c2.multiplyScalar(this.k * l));
+                    x3.add(c3.multiplyScalar(this.k * l));
+                }
+
+                for (let i = 0; i < this.lengths.length; i++) {
+                    var i0 = this.edgeindices[2 * i];
+                    var i1 = this.edgeindices[2 * i + 1];
+
+                    var x0 = this.positions[i0];
+                    var x1 = this.positions[i1];
+
+                    var l = x0.distanceTo(x1);
+
+                    var x0tox1 = (x0.clone().sub(x1.clone()));
+
+                    x0.add(x0tox1.clone().multiplyScalar(-this.k * 0.5 * (l - this.lengths[i]) / l));
+                    x1.add(x0tox1.clone().multiplyScalar( this.k * 0.5 * (l - this.lengths[i]) / l));
+                }
+
+                for (let i = 0; i < this.velocities.length; i++) {
+                    this.velocities[i] = (this.positions[i].clone().sub(p[i])).multiplyScalar(1 / timestepsize);
+                }
+
+                for (let i = 0; i < this.positions.length; i++) {
+                    if (this.positions[i].y < 0.0)
+                        this.positions[i].y = 0.0
+                }
+
+                for (let i = 0; i < rigidmeshes.length; i++) {
+                  for (let k = 0; k < this.positions.length; k++) {
+                    var dir = this.positions[k].clone().sub(rigidmeshes[i].position);
+                    var l = dir.length();
+                    var r = rigidmeshes[i].radius;
+                    if (l < r) {
+                      dir.normalize();
+                      var amount = (r - l) / 2.0;
+                      this.positions[k].add(dir.normalize().multiplyScalar(amount));
+                      rigidmeshes[i].position.add(dir.clone().multiplyScalar(-amount));
+                    }
+                  }
+                }
+            }
+            this.renderUpdate();
+        }
+
+        reset() {
+            // Bunny Reset
+            this.positions = []
+            this.velocities = []
+
+            for(let i = 0; i < this.vertices.length / 3; i++)
+            {
+                this.positions.push((new THREE.Vector3(this.init_positions[3 * i] * scale, this.init_positions[3 * i + 1] * scale, this.init_positions[3 * i + 2] * scale)).add(this.start));
+                this.velocities.push(new THREE.Vector3(0,0,0));
+            }
+
+            this.renderUpdate();
+        }
+    };
+
+    class RigidBodyObject {
+        constructor(_scene, start) {
+            // this.init_positions
+            this.position = start.clone();
+            this.velocity = new THREE.Vector3(0.0, 0.0, 0.0);
+
+            this.radius = Math.random() * 0.1 + 0.3;
+
+            this.geometry = new THREE.SphereGeometry(this.radius, 32, 16);
+            this.material = new THREE.MeshPhongMaterial({color : Math.floor(Math.random()*16777215), flatShading : false});
+            this.mesh = new THREE.Mesh(this.geometry, this.material);
+            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+            this.mesh.name = "Rigid" + rigidnum;
+            rigidnum += 1;
+            
+            _scene.add(this.mesh);
+
+            this.h = 0.05;
+            this.n = parseInt(1 / this.h);
+            this.mass = 1;
+            
+            this.start = start;
+
+            this.clicked = 0;
+        }
+        
+        renderUpdate() {
+            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+        }
+
+        update() {    
+            if (this.clicked == 0) {
+              this.velocity.add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * timestepsize));
+              if (this.position.y < this.radius + 0.001)
+                this.velocity.add((new THREE.Vector3(this.velocity.x, 0.0, this.velocity.z).multiplyScalar(-0.01)));
+            }
+            else {
+              this.velocity = new THREE.Vector3(0, 0, 0);
+            }
+
+            this.position.add(this.velocity.clone().multiplyScalar(timestepsize));
+
+            if (this.position.y < this.radius) {
+              this.position.y = this.radius;
+              this.velocity.y *= -0.2;
+            }
+
+            if (this.position.x > 10 - this.radius) this.position.x = 10 - this.radius;
+            else if (this.position.x < this.radius - 10) {
+              this.position.x = this.radius - 10;
+              this.velocity.x *= -0.2;
+            }
+
+            if (this.position.z > 10 - this.radius) this.position.z = 10 - this.radius;
+            else if (this.position.z < this.radius - 10) {
+              this.position.z = this.radius - 10;      
+              this.velocity.z *= -0.2;           
+            }
+            this.renderUpdate();
+        }
+        
+        reset() {
+            this.position = this.start.clone();
+            this.velocity = new THREE.Vector3(0.0, 0.0, 0.0);
+            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+
+            this.renderUpdate();
+        }
+        
+    };
+
+    function reset() {
+        var num = scene.children.length;
+        for (let i = 0; i < num - 4; i++) {
+          var last = scene.children[scene.children.length - 1];
+          scene.remove(last);
+        }
+
+        softmeshes = [];
+        rigidmeshes = [];
+        softnum = 0;
+        rigidnum = 0;
+
+        var bunny = new SoftBodyObject(tetris1File, scene, new THREE.Vector3(0,1,0), scale);
+        bunny.reset();
+        softmeshes.push(bunny);
+        //console.log(softmeshes.length)
+    }
+        
+    function run() {
+        scene.paused = !scene.paused;
+    }
+
+    function addsoftobject() {
+        //var soft = new SoftBodyObject(tetraFile, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5));
+        var r = Math.floor(Math.random() * 100) % 5 + 1;
+        var soft;
+        switch(r) {
+            case 1: soft = new SoftBodyObject(tetris1File, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5), scale); break;
+            case 2: soft = new SoftBodyObject(tetris2File, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5), scale); break;
+            case 3: soft = new SoftBodyObject(tetris3File, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5), scale); break;
+            case 4: soft = new SoftBodyObject(tetris4File, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5), scale); break;
+            case 5: soft = new SoftBodyObject(tetris5File, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5), scale); break;
+            default: break;
+        }
+        soft.reset();
+        softmeshes.push(soft);
+    }
+
+    function addrigidobject() {
+        var rigid = new RigidBodyObject(scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5));
+        rigid.reset(); 
+        rigidmeshes.push(rigid);
+    }
+
+    function animate() {
+        // controls.update();
+        if(!scene.paused) {
+            for (let i = 0; i < rigidmeshes.length; i++){
+              rigid_i = rigidmeshes[i];
+              for (let j = 0; j < rigidmeshes.length; j++) {
+                if (i == j) continue;
+                rigid_j = rigidmeshes[j]
+                var dir = rigid_i.position.clone().sub(rigid_j.position.clone());
+                var length = dir.length();
+                var compare = rigid_i.radius + rigid_j.radius
+                if (length < compare) {
+                  var move = (compare - length) / 2.0;
+                  dir.normalize();
+                  j_vel = rigid_j.velocity.length;
+                  i_vel = rigid_i.velocity.length;
+                  rigid_j.position.add(dir.clone().multiplyScalar(-move));
+                  rigid_j.velocity.add(dir.clone().multiplyScalar(-0.2));
+                  rigid_i.position.add(dir.clone().multiplyScalar(move));
+                  rigid_i.velocity.add(dir.clone().multiplyScalar(0.2));
+                }
+              }
+            }
+
+            for (let i = 0; i < softmeshes.length; i++) {
+                softmeshes[i].update();
+
+            }
+            for (let i = 0; i < rigidmeshes.length; i++) {
+                rigidmeshes[i].update();
+            }
+
+        }
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);  
+    }
+
+    document.getElementById("Slider01").oninput = function() {
+        dist = Number(this.value) * 0.01;
+        document.getElementById("SliderValue01").innerHTML = dist.toFixed(2).toString();
+    }
+
+    /*
+            0
+          /     2
+        3    
+              1
+    */
+    tetraFile = {
+        "name" : "tetrahedron",
+        "verts" : [
+            0.000, Math.sqrt(6) / 3,  0.000,
+            Math.sqrt(3) / 3, 0.000,  0.000,
+            -Math.sqrt(3) / 6, 0.000,  0.500,
+            -Math.sqrt(3) / 6, 0.000, -0.500,
+        ],
+        "tetIds" : [
+            0, 2, 1, 3
+        ],
+        "tetEdgeIds" : [
+            0,1, 0,2, 0,3, 1,2, 2,3, 3,1
+        ],
+        "tetSurfaceTriIds" : [
+            0,2,1, 0,3,2, 0,1,3, 1,2,3
+        ],
+        "tetSurfaceVertIds" : [
+            0, 1, 2, 3
+        ],
+        "surfaceTets" : [
+            0, 1, 2, 3
+        ]
+    };
+
+    // For Debugging
+    block1File = {
+        "name" : "block1",
+        "verts" : [
+            //     5          6
+            //  4          7
+            //     
+            //        8
+            //
+            //     1          2
+            //  0          3
+
+            0.5, 0.0, 0.5,  0.5, 0.0, -0.5,  -0.5, 0.0, -0.5,  -0.5, 0.0, 0.5,
+            0.5, 1.0, 0.5,  0.5, 1.0, -0.5,  -0.5, 1.0, -0.5,  -0.5, 1.0, 0.5,
+            0.0, 0.5, 0.0   // Center
+        ],
+        "tetIds" : [
+            8,0,2,3,  8,2,0,1,  8,7,5,4,  8,5,7,6,  
+            8,0,7,4,  8,7,0,3,  8,7,2,6,  8,2,7,3,
+            8,5,2,1,  8,2,5,6,  8,5,0,4,  8,0,5,1
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,0,
+            4,5,  5,6,  6,7,  7,4,
+            0,4,  3,7,  2,6,  1,5,
+            0,8,  1,8,  2,8,  3,8,
+            4,8,  5,8,  6,8,  7,8,
+            0,7,  2,7,  2,5,  0,5,
+            5,7,  0,2
+        ],
+        "tetSurfaceTriIds": [
+            3,2,0,  1,0,2,  4,5,7,  6,7,5,
+            4,7,0,  3,0,7,  6,2,7,  3,7,2,
+            1,2,5,  6,5,2,  4,0,5,  1,5,0
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7
+        ],
+        "surfaceTets" : [
+            8,1,3,0,  8,3,1,2,  8,7,5,4,  8,5,7,6,  
+            8,0,7,4,  8,7,0,3,  8,6,3,2,  8,3,6,7,
+            8,5,2,1,  8,2,5,6,  8,1,4,5,  8,4,1,0
+        ]
+    };
+    block2File = {
+        "name" : "block2",
+        "verts" : [
+            //     7          8          9
+            //  6          11         10
+            //     
+            //        12          13
+            //
+            //     1          2          3
+            //  0          5          4
+            
+            -1.0,0.0,0.5,  -1.0,0.0,-0.5,  0.0,0.0,-0.5,  1.0,0.0,-0.5,  1.0,0.0,0.5,  0.0,0.0,0.5,
+            -1.0,1.0,0.5,  -1.0,1.0,-0.5,  0.0,1.0,-0.5,  1.0,1.0,-0.5,  1.0,1.0,0.5,  0.0,1.0,0.5,
+            -0.5,0.5,0.0,  0.5,0.5,0.0
+        ],
+        "tetIds" : [
+            12,2,0,1,  12,0,2,5,  12,11,7,6,  12,7,11,8,
+            12,0,11,6,  12,11,0,5,  12,2,11,5,  12,11,2,8,
+            12,7,2,1,  12,2,7,8,  12,7,0,6,  12,0,7,1,
+
+            13,2,4,5,  13,4,2,3,  13,9,11,10, 13,11,9,8,
+            13,4,11,5,  13,11,4,10,  13,4,9,10,  13,9,4,3,
+            13,9,2,8,  13,2,9,3,  13,2,11,8,  13,11,2,5
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,0,  2,5,
+            6,7,  7,8,  8,9,  9,10,  10,11,  11,6,  8,11,
+            0,6,  5,11,  4,10,  3,9,  2,8,  1,7,
+            0,11,  11,2,  2,7,  7,0,  0,2,  7,11,
+            2,4,  4,9,  4,11,  9,11,  2,9
+        ],
+        "tetSurfaceTriIds": [
+            1,2,0,  5,0,2,  7,6,11,  8,7,11,
+            6,0,11,  5,11,0,  5,2,11,  8,11,2,
+            1,7,2,  8,2,7,  6,7,0,  1,0,7,
+            
+            5,2,4,  3,4,2,  10,9,11,  8,11,9,
+            5,4,11,  10,11,4,  10,4,9,  3,9,4,
+            8,9,2,  3,2,9,  8,2,11,  5,11,2
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11
+        ],
+        "surfaceTets" : [
+            12,2,0,1,  12,0,2,5,  12,11,7,6,  12,7,11,8,
+            12,0,11,6,  12,11,0,5,
+            12,7,2,1,  12,2,7,8,  12,7,0,6,  12,0,7,1,
+
+            13,2,4,5,  13,4,2,3,  13,9,11,10, 13,11,9,8,
+            13,4,11,5,  13,11,4,10,  13,4,9,10,  13,9,4,3,
+            13,9,2,8,  13,2,9,3,
+        ]
+    };
+    block3File = {
+        "name" : "block3",
+        "verts" : [
+            //     9          10         11         12
+            //  8          15         14         13
+            //     
+            //        16          17         18
+            //
+            //     1          2          3          4
+            //  0          7          6          5
+            -1.5,0.0,0.5,  -1.5,0.0,-0.5,  -0.5,0.0,-0.5,  0.5,0.0,-0.5,  1.5,0.0,-0.5,  1.5,0.0,0.5,  0.5,0.0,0.5,  -0.5,0.0,0.5,
+            -1.5,1.0,0.5,  -1.5,1.0,-0.5,  -0.5,1.0,-0.5,  0.5,1.0,-0.5,  1.5,1.0,-0.5,  1.5,1.0,0.5,  0.5,1.0,0.5,  -0.5,1.0,0.5,
+            -1.0,0.5,0.0,  0.0,0.5,0.0,  1.0,0.5,0.0          
+        ],
+        "tetIds" : [
+            16,0,2,7,  16,2,0,1,  16,9,15,10,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,6,  6,7,  7,0,  2,7,  3,6,  4,5,
+            8,9,  9,10,  10,11,  11,12,  12,13,  13,14,  14,15,  15,8,  10,15,  11,14,  12,13,
+            0,8,  1,9,  2,10,  3,11,  4,12,  5,13,  6,14,  7,15,
+            0,15,  15,6,  6,13,  13,4,  4,11,  11,2,  2,9,  9,0,
+            9,15,  15,11, 11,13,  4,6,  6,2,  2,0,
+            0,16,  1,16,  2,16,  7,16,  8,16,  9,16,  10,16,  15,16,
+            2,17,  3,17,  6,17,  7,17,  10,17,  11,17,  14,17,  15,17,
+            3,18,  4,18,  5,18,  6,18,  11,18,  12,18,  13,18,  14,18
+        ],
+        "tetSurfaceTriIds": [
+            7,0,2,  1,2,0,  10,9,15,  8,15,9,  8,0,15,  7,15,0,  7,2,15,  10,15,2,  10,2,9,  1,9,2,  8,9,0,  1,0,9,
+            7,2,6,  3,6,2,  14,11,15,  10,15,11,  7,6,15,  14,15,6,  3,11,6,  14,6,11,  10,11,2,  3,2,11,  7,15,2,  10,2,15,
+            5,6,4,  3,4,6,  12,11,13,  14,13,11,  14,6,13,  5,13,6,  5,4,13,  12,13,4,  12,4,11,  3,11,4,  14,11,6,  3,6,11
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+        ],
+        "surfaceTets" : [
+            16,0,2,7,  16,2,0,11,  16,9,15,0,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3
+        ]
+    };
+    tetris1File = {
+        "name" : "tetris1",
+        "verts" : [
+            //                              19         20
+            //     9          10         11         12
+            //  8          15         14         13
+            //                                  23        
+            //        16          17         18
+            //                              22         21
+            //     1          2          3          4
+            //  0          7          6          5
+            -1.5,0.0,0.5,  -1.5,0.0,-0.5,  -0.5,0.0,-0.5,  0.5,0.0,-0.5,  1.5,0.0,-0.5,  1.5,0.0,0.5,  0.5,0.0,0.5,  -0.5,0.0,0.5,
+            -1.5,1.0,0.5,  -1.5,1.0,-0.5,  -0.5,1.0,-0.5,  0.5,1.0,-0.5,  1.5,1.0,-0.5,  1.5,1.0,0.5,  0.5,1.0,0.5,  -0.5,1.0,0.5,
+            -1.0,0.5,0.0,  0.0,0.5,0.0,  1.0,0.5,0.0,
+            0.5,1.0,-1.5,  1.5,1.0,-1.5,  1.5,0.0,-1.5,  0.5,0.0,-1.5,  1.0,0.5,-1.0          
+        ],
+        "tetIds" : [
+            16,0,2,7,  16,2,0,1,  16,9,15,10,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3,
+            23,20,11,12,  23,11,20,19,  23,4,22,21,  23,22,4,3,  23,11,4,12,  23,4,11,3,  23,20,4,21,  23,4,20,12,  23,20,22,19,  23,22,20,21,  23,22,11,19,  23,11,22,3
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,6,  6,7,  7,0,  2,7,  3,6,  4,5,
+            8,9,  9,10,  10,11,  11,12,  12,13,  13,14,  14,15,  15,8,  10,15,  11,14,  12,13,
+            0,8,  1,9,  2,10,  3,11,  4,12,  5,13,  6,14,  7,15,
+            0,15,  15,6,  6,13,  13,4,  4,11,  11,2,  2,9,  9,0,
+            9,15,  15,11, 11,13,  4,6,  6,2,  2,0,
+            0,16,  1,16,  2,16,  7,16,  8,16,  9,16,  10,16,  15,16,
+            2,17,  3,17,  6,17,  7,17,  10,17,  11,17,  14,17,  15,17,
+            3,18,  4,18,  5,18,  6,18,  11,18,  12,18,  13,18,  14,18,
+            3,22,  4,21,  11,19,  12,20,  19,20,  20,21,  21,22,  22,19,
+            11,20,  4,13,  4,20,  20,22,  22,11
+        ],
+        "tetSurfaceTriIds": [
+            7,0,2,  1,2,0,  10,9,15,  8,15,9,  8,0,15,  7,15,0,  7,2,15,  10,15,2,  10,2,9,  1,9,2,  8,9,0,  1,0,9,
+            7,2,6,  3,6,2,  14,11,15,  10,15,11,  7,6,15,  14,15,6,  3,11,6,  14,6,11,  10,11,2,  3,2,11,  7,15,2,  10,2,15,
+            5,6,4,  3,4,6,  12,11,13,  14,13,11,  14,6,13,  5,13,6,  5,4,13,  12,13,4,  12,4,11,  3,11,4,  14,11,6,  3,6,11,
+            12,20,11,  19,11,20,  21,4,22,  3,22,4,  12,11,4,  3,4,11,  21,20,4,  12,4,20,  19,20,22,  21,22,20,  19,22,11,  3,11,22
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,19,20,21,22
+        ],
+        "surfaceTets" : [
+            16,0,2,7,  16,2,0,11,  16,9,15,0,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3
+        ]
+    };
+
+    tetris2File = {
+        "name" : "tetris2",
+        "verts" : [
+
+            //     9          10         11         12        19
+            //  8          15         14         13         22
+            //                                          
+            //        16          17         18         23
+            //                            
+            //     1          2          3          4         20
+            //  0          7          6          5          21
+            -1.5,0.0,0.5,  -1.5,0.0,-0.5,  -0.5,0.0,-0.5,  0.5,0.0,-0.5,  1.5,0.0,-0.5,  1.5,0.0,0.5,  0.5,0.0,0.5,  -0.5,0.0,0.5,
+            -1.5,1.0,0.5,  -1.5,1.0,-0.5,  -0.5,1.0,-0.5,  0.5,1.0,-0.5,  1.5,1.0,-0.5,  1.5,1.0,0.5,  0.5,1.0,0.5,  -0.5,1.0,0.5,
+            -1.0,0.5,0.0,  0.0,0.5,0.0,  1.0,0.5,0.0,
+            2.5,1.0,-0.5,  2.5,0.0,-0.5,  2.5,0.0,0.5,  2.5,1.0,0.5,  2.0,0.5,0.0          
+        ],
+        "tetIds" : [
+            16,0,2,7,  16,2,0,1,  16,9,15,10,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3,
+            23,19,13,22,  23,13,19,12,  23,4,21,5,  23,21,4,20,  23,19,21,20,  23,21,19,22,  23,19,4,12,  23,4,19,20,  23,4,13,12,  23,13,4,5,  23,13,21,22,  23,21,13,5
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,6,  6,7,  7,0,  2,7,  3,6,  4,5,
+            8,9,  9,10,  10,11,  11,12,  12,13,  13,14,  14,15,  15,8,  10,15,  11,14,  12,13,
+            0,8,  1,9,  2,10,  3,11,  4,12,  5,13,  6,14,  7,15,
+            0,15,  15,6,  6,13,  13,4,  4,11,  11,2,  2,9,  9,0,
+            9,15,  15,11, 11,13,  4,6,  6,2,  2,0,
+            0,16,  1,16,  2,16,  7,16,  8,16,  9,16,  10,16,  15,16,
+            2,17,  3,17,  6,17,  7,17,  10,17,  11,17,  14,17,  15,17,
+            3,18,  4,18,  5,18,  6,18,  11,18,  12,18,  13,18,  14,18,
+            4,20,  5,21,  13,22,  12,19,  19,20,  20,21,  21,22,  22,19,
+            13,19,  4,21,  21,19,  19,4,  4,13,  13,21
+        ],
+        "tetSurfaceTriIds": [
+            7,0,2,  1,2,0,  10,9,15,  8,15,9,  8,0,15,  7,15,0,  7,2,15,  10,15,2,  10,2,9,  1,9,2,  8,9,0,  1,0,9,
+            7,2,6,  3,6,2,  14,11,15,  10,15,11,  7,6,15,  14,15,6,  3,11,6,  14,6,11,  10,11,2,  3,2,11,  7,15,2,  10,2,15,
+            5,6,4,  3,4,6,  12,11,13,  14,13,11,  14,6,13,  5,13,6,  5,4,13,  12,13,4,  12,4,11,  3,11,4,  14,11,6,  3,6,11,
+            22,19,13,  12,13,19,  5,4,21,  20,21,4,  20,19,21,  22,21,19,  12,19,4,  20,4,19,  12,4,13,  5,13,4,  22,13,21,  5,21,13
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,19,20,21,22
+        ],
+        "surfaceTets" : [
+            16,0,2,7,  16,2,0,11,  16,9,15,0,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3
+        ]
+    };
+
+    tetris3File = {
+        "name" : "tetris3",
+        "verts" : [
+            //                   19         20
+            //     9          10         11         12
+            //  8          15         14         13
+            //                       23                    
+            //        16          17         18 
+            //                   22         21
+            //     1          2          3          4
+            //  0          7          6          5
+            -1.5,0.0,0.5,  -1.5,0.0,-0.5,  -0.5,0.0,-0.5,  0.5,0.0,-0.5,  1.5,0.0,-0.5,  1.5,0.0,0.5,  0.5,0.0,0.5,  -0.5,0.0,0.5,
+            -1.5,1.0,0.5,  -1.5,1.0,-0.5,  -0.5,1.0,-0.5,  0.5,1.0,-0.5,  1.5,1.0,-0.5,  1.5,1.0,0.5,  0.5,1.0,0.5,  -0.5,1.0,0.5,
+            -1.0,0.5,0.0,  0.0,0.5,0.0,  1.0,0.5,0.0,
+            -0.5,1.0,-1.5,  0.5,1.0,-1.5,  0.5,0.0,-1.5,  -0.5,0.0,-1.5,  0.0,0.5,-1.0           
+        ],
+        "tetIds" : [
+            16,0,2,7,  16,2,0,1,  16,9,15,10,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3,
+            23,11,19,10,  23,19,11,20,  23,21,2,22,  23,2,21,3,  23,2,11,10,  23,11,2,3,  23,11,21,20,  23,21,11,3,  23,19,21,22,  23,21,19,20,  23,19,2,10,  23,2,19,22
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,6,  6,7,  7,0,  2,7,  3,6,  4,5,
+            8,9,  9,10,  10,11,  11,12,  12,13,  13,14,  14,15,  15,8,  10,15,  11,14,  12,13,
+            0,8,  1,9,  2,10,  3,11,  4,12,  5,13,  6,14,  7,15,
+            0,15,  15,6,  6,13,  13,4,  4,11,  11,2,  2,9,  9,0,
+            9,15,  15,11, 11,13,  4,6,  6,2,  2,0,
+            0,16,  1,16,  2,16,  7,16,  8,16,  9,16,  10,16,  15,16,
+            2,17,  3,17,  6,17,  7,17,  10,17,  11,17,  14,17,  15,17,
+            3,18,  4,18,  5,18,  6,18,  11,18,  12,18,  13,18,  14,18,
+            19,20,  20,21,  21,22,  22,19,  10,19,  11,20,  3,21,  2,22,
+            2,21,  11,19,  11,21,  21,19,  19,2
+        ],
+        "tetSurfaceTriIds": [
+            7,0,2,  1,2,0,  10,9,15,  8,15,9,  8,0,15,  7,15,0,  7,2,15,  10,15,2,  10,2,9,  1,9,2,  8,9,0,  1,0,9,
+            7,2,6,  3,6,2,  14,11,15,  10,15,11,  7,6,15,  14,15,6,  3,11,6,  14,6,11,  10,11,2,  3,2,11,  7,15,2,  10,2,15,
+            5,6,4,  3,4,6,  12,11,13,  14,13,11,  14,6,13,  5,13,6,  5,4,13,  12,13,4,  12,4,11,  3,11,4,  14,11,6,  3,6,11,
+            10,11,19,  20,19,11,  22,21,2,  3,2,21,  10,2,11,  3,11,2,  20,11,21,  3,21,11,  22,19,21,  20,21,19,  10,19,2,  22,2,19
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,19,20,21,22
+        ],
+        "surfaceTets" : [
+            16,0,2,7,  16,2,0,11,  16,9,15,0,  16,15,9,8,  16,0,15,8,  16,15,0,7,  16,2,15,7,  17,15,2,10,  16,2,9,10,  16,9,2,1,  16,9,0,8,  16,0,9,1,
+            17,2,6,7,  17,6,2,3,  17,11,15,14,  17,15,11,10,  17,6,15,7,  17,15,6,14,  17,11,6,3,  17,6,11,14,  17,11,2,10,  17,2,11,3,  17,15,2,7,  17,2,15,10,
+            18,6,4,5,  18,4,6,3,  18,11,13,12,  18,13,11,14,  18,6,13,14,  18,13,6,5,  18,4,13,5,  18,13,4,12,  18,4,11,12,  18,11,4,3,  18,11,6,14,  18,6,11,3
+        ]
+    };
+    tetris4File = {
+        "name" : "tetris4",
+        "verts" : [
+            //        14         15         16
+            //     7          8          9
+            //  6          11         10
+            //          20         21
+            //        12         13
+            //        19         18         17
+            //     1          2          3
+            //  0          5          4
+            
+            -1.0,0.0,0.5,  -1.0,0.0,-0.5,  0.0,0.0,-0.5,  1.0,0.0,-0.5,  1.0,0.0,0.5,  0.0,0.0,0.5,
+            -1.0,1.0,0.5,  -1.0,1.0,-0.5,  0.0,1.0,-0.5,  1.0,1.0,-0.5,  1.0,1.0,0.5,  0.0,1.0,0.5,
+            -0.5,0.5,0.0,  0.5,0.5,0.0,
+            -1.0,1.0,-1.5,  0.0,1.0,-1.5,  1.0,1.0,-1.5,  1.0,0.0,-1.5,  0.0,0.0,-1.5,  -1.0,0.0,-1.5,
+            -0.5,0.5,-1.0,  0.5,0.5,-1.0,
+        ],
+        "tetIds" : [
+            12,2,0,1,  12,0,2,5,  12,11,7,6,  12,7,11,8,
+            12,0,11,6,  12,11,0,5,  12,2,11,5,  12,11,2,8,
+            12,7,2,1,  12,2,7,8,  12,7,0,6,  12,0,7,1,
+
+            13,2,4,5,  13,4,2,3,  13,9,11,10, 13,11,9,8,
+            13,4,11,5,  13,11,4,10,  13,4,9,10,  13,9,4,3,
+            13,9,2,8,  13,2,9,3,  13,2,11,8,  13,11,2,5,
+
+            20,19,2,1,  20,2,19,18,  20,15,7,8,  20,7,15,14,
+            20,7,2,8,  20,2,7,1,  20,15,2,18,  20,2,15,8,
+            20,15,19,14,  20,19,15,18,  20,19,7,14,  20,7,19,1,
+
+            21,9,15,8,  21,15,9,16,  21,17,2,18,  21,2,17,3,
+            21,15,2,8,  21,2,15,18,  21,2,9,8,  21,9,2,3,
+            21,9,17,16,  21,17,9,3,  21,15,17,18,  21,17,15,16
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,0,  2,5,
+            6,7,  7,8,  8,9,  9,10,  10,11,  11,6,  8,11,
+            0,6,  5,11,  4,10,  3,9,  2,8,  1,7,
+            0,11,  11,2,  2,7,  7,0,  0,2,  7,11,
+            2,4,  4,9,  4,11,  9,11,  2,9,
+            1,19,  2,18,  3,17,  7,14,  8,15,  9,16,
+            14,15,  15,16,  16,17,  17,18,  18,19,  19,14,
+            14,19,  15,18,  16,17,
+            1,14,  14,18,  18,16,  16,3,  7,15,  15,9,  19,2,  2,17
+        ],
+        "tetSurfaceTriIds": [
+            1,2,0,  5,0,2,  7,6,11,  8,7,11,
+            6,0,11,  5,11,0,  5,2,11,  8,11,2,
+            1,7,2,  8,2,7,  6,7,0,  1,0,7,
+            
+            5,2,4,  3,4,2,  10,9,11,  8,11,9,
+            5,4,11,  10,11,4,  10,4,9,  3,9,4,
+            8,9,2,  3,2,9,  8,2,11,  5,11,2,
+
+            1,19,2,  18,2,19,  8,15,7,  14,7,15,
+            8,7,2,  1,7,2,  18,15,2,  8,2,15,
+            14,15,19,  18,19,15,  14,19,7,  1,7,19,
+
+            8,9,15,  16,15,9,  18,17,2,  3,2,17,
+            8,15,2,  18,2,15,  8,2,9,  3,9,2,
+            16,9,17,  3,17,9,  18,15,17,  16,17,15
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19
+        ],
+        "surfaceTets" : [
+            12,2,0,1,  12,0,2,5,  12,11,7,6,  12,7,11,8,
+            12,0,11,6,  12,11,0,5,
+            12,7,2,1,  12,2,7,8,  12,7,0,6,  12,0,7,1,
+
+            13,2,4,5,  13,4,2,3,  13,9,11,10, 13,11,9,8,
+            13,4,11,5,  13,11,4,10,  13,4,9,10,  13,9,4,3,
+            13,9,2,8,  13,2,9,3,
+        ]
+    };
+
+    tetris5File = {
+        "name" : "tetris5",
+        "verts" : [
+            //                  14         15         16
+            //     7          8          9
+            //  6          11         10          23
+            //                      20         21
+            //        12         13
+            //                  19         18         17
+            //     1          2          3        22 
+            //  0          5          4
+            
+            -1.0,0.0,0.5,  -1.0,0.0,-0.5,  0.0,0.0,-0.5,  1.0,0.0,-0.5,  1.0,0.0,0.5,  0.0,0.0,0.5,
+            -1.0,1.0,0.5,  -1.0,1.0,-0.5,  0.0,1.0,-0.5,  1.0,1.0,-0.5,  1.0,1.0,0.5,  0.0,1.0,0.5,
+            -0.5,0.5,0.0,  0.5,0.5,0.0,
+            0.0,1.0,-1.5,  1.0,1.0,-1.5,  2.0,1.0,-1.5,  2.0,0.0,-1.5,  1.0,0.0,-1.5,  0.0,0.0,-1.5,
+            0.5,0.5,-1.0,  1.5,0.5,-1.0,
+            2.0,0.0,-0.5,  2.0,1.0,-0.5
+        ],
+        "tetIds" : [
+            12,2,0,1,  12,0,2,5,  12,11,7,6,  12,7,11,8,
+            12,0,11,6,  12,11,0,5,  12,2,11,5,  12,11,2,8,
+            12,7,2,1,  12,2,7,8,  12,7,0,6,  12,0,7,1,
+
+            13,2,4,5,  13,4,2,3,  13,9,11,10, 13,11,9,8,
+            13,4,11,5,  13,11,4,10,  13,4,9,10,  13,9,4,3,
+            13,9,2,8,  13,2,9,3,  13,2,11,8,  13,11,2,5,
+
+            20,9,14,8,  20,14,9,15,  20,18,2,19,  20,2,18,3,
+            20,14,2,8,  20,2,14,19,  20,2,9,8,  20,9,2,3,
+            20,18,9,3,  20,9,18,15,  20,14,18,19,  20,18,14,15,
+
+            21,16,9,23,  21,9,16,15,  21,18,22,3,  21,22,18,17,
+            21,18,9,15,  21,9,18,3,  21,22,9,3,  21,9,22,23,
+            21,16,22,17,  21,22,16,23,  21,16,18,15,  21,18,16,17
+        ],
+        "tetEdgeIds" : [
+            0,1,  1,2,  2,3,  3,4,  4,5,  5,0,  2,5,
+            6,7,  7,8,  8,9,  9,10,  10,11,  11,6,  8,11,
+            0,6,  5,11,  4,10,  3,9,  2,8,  1,7,
+            0,11,  11,2,  2,7,  7,0,  0,2,  7,11,
+            2,4,  4,9,  4,11,  9,11,  2,9,
+            14,15,  15,16,  16,17,  17,18,  18,19,  19,14,
+            2,19,  3,18,  22,17,  23,16,  9,15,  8,14,
+            9,23,  3,22,  2,18,  18,22,  14,9,  9,16,
+            9,22,  22,16,  16,18,  18,14,  14,2,  3,15
+        ],
+        "tetSurfaceTriIds": [
+            1,2,0,  5,0,2,  7,6,11,  8,7,11,
+            6,0,11,  5,11,0,  5,2,11,  8,11,2,
+            1,7,2,  8,2,7,  6,7,0,  1,0,7,
+            
+            5,2,4,  3,4,2,  10,9,11,  8,11,9,
+            5,4,11,  10,11,4,  10,4,9,  3,9,4,
+            8,9,2,  3,2,9,  8,2,11,  5,11,2,
+
+            8,9,14,  15,14,9,  19,18,2,  3,2,18,
+            8,14,2,  19,2,14,  8,2,9,  3,9,2,
+            3,18,9,  15,9,18,  19,14,18,  15,18,14,
+
+            23,16,9,  15,9,16,  3,18,22,  17,22,18,
+            15,18,9,  3,9,18,  3,22,9,  23,9,22,
+            17,16,22,  23,22,16,  15,16,18,  17,18,16
+        ],
+        "tetSurfaceVertIds": [
+            0,1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19,22,23
+        ],
+        "surfaceTets" : [
+            12,2,0,1,  12,0,2,5,  12,11,7,6,  12,7,11,8,
+            12,0,11,6,  12,11,0,5,
+            12,7,2,1,  12,2,7,8,  12,7,0,6,  12,0,7,1,
+
+            13,2,4,5,  13,4,2,3,  13,9,11,10, 13,11,9,8,
+            13,4,11,5,  13,11,4,10,  13,4,9,10,  13,9,4,3,
+            13,9,2,8,  13,2,9,3,
+        ]
+    };
+
+    // document.write(tetraFile['verts']);
+    var test = new SoftBodyObject(tetris5File, scene, new THREE.Vector3(0,1,0), scale);
+    softmeshes.push(test);
+    test.reset();
+
+    animate();
+
+    var timestepslider = document.getElementById("Slider01");
+    var timestepoutput = document.getElementById("SliderValue01");
+
+    timestepslider.oninput = function() {
+      timestepoutput.innerHTML = this.value / 1000.0;
+      timestepsize = this.value / 1000.0;
+      //console.log(timestepsize);
+    }
+
+    var numstepslider = document.getElementById("Slider02");
+    var numstepoutput = document.getElementById("SliderValue02");
+
+    numstepslider.oninput = function() {
+      numstepoutput.innerHTML = this.value;
+      numstepsize = this.value;
+      //console.log(numstepsize);
+    }
+
+    var raycaster = new THREE.Raycaster();
+    var mouse = new THREE.Vector2();
+    var clickedobject = 0;
+    var intersectionPoint = new THREE.Vector3();
+    var planeN = new THREE.Vector3();
+    var plane = new THREE.Plane();
+    var prevpos = new THREE.Vector3();
+    var savenum = -1;
+
+    let onMouseDown = function (e) {
+      var gapX = e.clientX - e.offsetX;
+      var gapY = e.clientY - e.offsetY;
+
+      mouse.x = ((e.clientX - gapX) / ( window.innerWidth )) * 2 - 1;
+      mouse.y =  - ((e.clientY - gapY) / ( window.innerHeight )) * 2 + 1;
+      raycaster.setFromCamera( mouse, camera );
+      
+      const intersects = raycaster.intersectObjects( scene.children );
+      if (intersects.length == 0) return;
+
+      var mind = 1000.0;
+      for (let i = 0; i < intersects.length; i++) {
+        if (intersects[i].distance < mind) {
+          if (intersects[i].object.name.substr(0, 5) == "Rigid") {
+            controls.enabled = false;
+            clickedobject = intersects[i];
+            savenum = Number(intersects[i].object.name.substr(5));
+            rigidmeshes[savenum].clicked = 1;
+            mind = intersects[i].distance;
+          }
+          else if (intersects[i].object.name.substr(0, 4) == "Soft") {
+            controls.enabled = false;
+            clickedobject = intersects[i];
+            prevpos = clickedobject.point;
+            savenum = Number(intersects[i].object.name.substr(4));
+            softmeshes[savenum].clicked = 1;
+            mind = intersects[i].distance;
+          }
+        }
+      }
+    }
+    let onMouseUp = function(e) {
+      if (clickedobject != 0) {
+        if (clickedobject.object.name.substr(0, 5) == "Rigid")  {
+          rigidmeshes[savenum].clicked = 0;
+        }
+        else if (clickedobject.object.name.substr(0, 4) == "Soft") {
+          softmeshes[savenum].clicked = 0;
+        }
+      }
+      clickedobject = 0;
+      controls.enabled = true;
+      savepos = [];
+    }
+    let onMouseMove = function(e) {
+      if (clickedobject != 0) {
+        var gapX = e.clientX - e.offsetX;
+        var gapY = e.clientY - e.offsetY;
+        var basis = clickedobject.point;
+        planeN.copy(camera.position).sub(basis).normalize();
+        plane.setFromNormalAndCoplanarPoint(planeN, basis);
+
+        mouse.x = ((e.clientX - gapX) / ( window.innerWidth )) * 2 - 1;
+        mouse.y =  - ((e.clientY - gapY) / ( window.innerHeight )) * 2 + 1;
+        raycaster.setFromCamera( mouse, camera );
+        raycaster.ray.intersectPlane(plane, intersectionPoint);
+        
+        //console.log(intersectionPoint);
+        if (clickedobject.object.name.substr(0, 5) == "Rigid")  {
+          rigidmeshes[savenum].position = intersectionPoint.clone();
+          rigidmeshes[savenum].update();
+        }
+        else if (clickedobject.object.name.substr(0, 4) == "Soft") {
+          var soft = softmeshes[savenum];
+          //soft.positions[clickedobject.face.a] = intersectionPoint.clone();
+          for (let i = 0; i < soft.positions.length; i++) {
+            soft.positions[i].add(intersectionPoint.clone().sub(prevpos));
+          }
+          soft.update();
+        }
+        prevpos = intersectionPoint.clone();
+      }
+    }
+    window.addEventListener("mousedown", onMouseDown, false);
+    window.addEventListener("mouseup", onMouseUp, false);
+    window.addEventListener("mousemove", onMouseMove, false);
+    
+  </script>
+</body>
+
+</html>

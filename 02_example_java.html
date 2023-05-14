@@ -40,7 +40,7 @@
     <button class="button" onclick="addsoftobject()">Add Soft Object</button>
     <button class="button" onclick="addrigidobject()">Add Rigid Object</button>
 
-    Time Step Size<input type = "range" min = "1" max = "100" value = "100" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.1</span>
+    Time Step Size<input type = "range" min = "1" max = "100" value = "1" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.01</span>
     Num Sub Steps<input type = "range" min = "1" max = "100" value = "100" id = "Slider02" class = "slider"> <span id = "SliderValue02">100</span>
 
     <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
@@ -96,6 +96,8 @@
 
     softmeshes = [];
     rigidmeshes = [];
+    var softnum = 0;
+    var rigidnum = 0;
 
     timestepsize = 0.01;
     numstepsize = 100;
@@ -121,6 +123,7 @@
             this.edgeindices = new Uint16Array(file['tetEdgeIds']);
 
             this.surfaceindices = new Uint16Array(file['tetSurfaceVertIds']);
+            this.surfacetetindices = new Uint16Array(file['surfaceTets']);
 
             this.geometry = new THREE.BufferGeometry();
             this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
@@ -128,7 +131,8 @@
 
             this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({color : 0x00f00f, flatShading : false}));
             this.mesh.geometry.computeVertexNormals();
-            this.mesh.name = "Soft";
+            this.mesh.name = "Soft" + softnum;
+            softnum += 1;
             _scene.add(this.mesh);
 
             this.edge_geometry =  new THREE.BufferGeometry();
@@ -182,6 +186,8 @@
 
                 this.lengths.push(x0.distanceTo(x1));
             }
+
+            this.clicked = 0;
         }
 
         renderUpdate() {
@@ -204,8 +210,15 @@
         update() {
             // Dummy Velocity (Going Up)
             for (let n = 0; n < numstepsize; n++) {
-                for (let i = 0; i < this.positions.length; i++) {
-                    this.velocities[i].add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * timestepsize));
+                if (this.clicked == 0) {
+                  for (let i = 0; i < this.positions.length; i++) {
+                      this.velocities[i].add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * timestepsize));
+                  }
+                }
+                else {
+                  for (let i = 0; i < this.positions.length; i++) {
+                      this.velocities[i] = new THREE.Vector3(0, 0, 0);
+                  }
                 }
 
                 var p = this.positions.slice()
@@ -310,6 +323,8 @@
             this.material = new THREE.MeshPhongMaterial({color : Math.floor(Math.random()*16777215), flatShading : false});
             this.mesh = new THREE.Mesh(this.geometry, this.material);
             this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+            this.mesh.name = "Rigid" + rigidnum;
+            rigidnum += 1;
             
             _scene.add(this.mesh);
 
@@ -318,6 +333,8 @@
             this.mass = 1;
             
             this.start = start;
+
+            this.clicked = 0;
         }
         
         renderUpdate() {
@@ -325,20 +342,33 @@
         }
 
         update() {    
-            this.velocity.add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * timestepsize));
-            this.velocity.add((new THREE.Vector3(this.velocity.x, 0.0, this.velocity.z).multiplyScalar(-0.01)));
+            if (this.clicked == 0) {
+              this.velocity.add((new THREE.Vector3(0.0, -1.0, 0.0)).multiplyScalar(this.mass * timestepsize));
+              if (this.position.y < this.radius + 0.001)
+                this.velocity.add((new THREE.Vector3(this.velocity.x, 0.0, this.velocity.z).multiplyScalar(-0.01)));
+            }
+            else {
+              this.velocity = new THREE.Vector3(0, 0, 0);
+            }
 
             this.position.add(this.velocity.clone().multiplyScalar(timestepsize));
 
             if (this.position.y < this.radius) {
               this.position.y = this.radius;
+              this.velocity.y *= -0.2;
             }
 
             if (this.position.x > 10 - this.radius) this.position.x = 10 - this.radius;
-            else if (this.position.x < this.radius - 10) this.position.x = this.radius - 10;
+            else if (this.position.x < this.radius - 10) {
+              this.position.x = this.radius - 10;
+              this.velocity.x *= -0.2;
+            }
 
             if (this.position.z > 10 - this.radius) this.position.z = 10 - this.radius;
-            else if (this.position.z < this.radius - 10) this.position.z = this.radius - 10;                
+            else if (this.position.z < this.radius - 10) {
+              this.position.z = this.radius - 10;      
+              this.velocity.z *= -0.2;           
+            }
             this.renderUpdate();
         }
         
@@ -361,11 +391,13 @@
 
         softmeshes = [];
         rigidmeshes = [];
+        softnum = 0;
+        rigidnum = 0;
 
         var bunny = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(0,1,0));
         softmeshes.push(bunny);
         bunny.reset();
-        console.log(softmeshes.length)
+        //console.log(softmeshes.length)
     }
         
     function run() {
@@ -373,6 +405,7 @@
     }
 
     function addsoftobject() {
+        //var soft = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5));
         var soft = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5));
         soft.reset();
         softmeshes.push(soft);
@@ -380,62 +413,204 @@
 
     function addrigidobject() {
         var rigid = new RigidBodyObject(scene, new THREE.Vector3(Math.random() - 0.5,5 * Math.random(),Math.random() - 0.5));
-        rigid.reset();
+        rigid.reset(); 
         rigidmeshes.push(rigid);
-
     }
 
     function animate() {
         // controls.update();
         if(!scene.paused) {
             for (let i = 0; i < rigidmeshes.length; i++){
+              rigid_i = rigidmeshes[i];
               for (let j = 0; j < rigidmeshes.length; j++) {
                 if (i == j) continue;
-                var dir = rigidmeshes[i].position.clone().sub(rigidmeshes[j].position.clone());
+                rigid_j = rigidmeshes[j]
+                var dir = rigid_i.position.clone().sub(rigid_j.position.clone());
                 var length = dir.length();
-                var compare = rigidmeshes[i].radius + rigidmeshes[j].radius
+                var compare = rigid_i.radius + rigid_j.radius
                 if (length < compare) {
                   var move = (compare - length) / 2.0;
                   dir.normalize();
-                  rigidmeshes[j].position.add(dir.clone().multiplyScalar(-move));
-                  rigidmeshes[j].velocity.add(dir.clone().multiplyScalar(-0.1));
-                  rigidmeshes[i].position.add(dir.clone().multiplyScalar(move));
-                  rigidmeshes[i].velocity.add(dir.clone().multiplyScalar(0.1));
+                  j_vel = rigid_j.velocity.length;
+                  i_vel = rigid_i.velocity.length;
+                  rigid_j.position.add(dir.clone().multiplyScalar(-move));
+                  rigid_j.velocity.add(dir.clone().multiplyScalar(-0.2));
+                  rigid_i.position.add(dir.clone().multiplyScalar(move));
+                  rigid_i.velocity.add(dir.clone().multiplyScalar(0.2));
                 }
               }
             }
+            
 
+            /*
+            // Check for all tetrahedrons
+            // project to nearest surface -> wrong implementation
             for (let i = 0; i < softmeshes.length; i++) {
               var soft_i = softmeshes[i];
-              for (let j = 0; j < softmeshes.length; j++) {
-                
+
+              for (let j = 0; j < softmeshes.length; j++) {              
                 var soft_j = softmeshes[j];
+
                 for (let k = 0; k < soft_i.surfaceindices.length; k++) {
-                  var p = soft_i.positions[soft_i.surfaceindices[k]].clone();
-                  for (let l = 0; l < soft_j.indices.length / 3; l++) {
-                    var i0 = soft_j.indices[3 * l];
-                    var i1 = soft_j.indices[3 * l + 1];
-                    var i2 = soft_j.indices[3 * l + 2];
+                  var p = soft_i.positions[soft_i.surfaceindices[k]];
 
-                    var x0 = soft_j.positions[i0];
-                    var x1 = soft_j.positions[i1];
-                    var x2 = soft_j.positions[i2];
+                  for (let l = 0; l < soft_j.volume_indices.length / 4; l++) {
+                    var i0 = soft_j.volume_indices[4 * l];
+                    var i1 = soft_j.volume_indices[4 * l + 1];
+                    var i2 = soft_j.volume_indices[4 * l + 2];
+                    var i3 = soft_j.volume_indices[4 * l + 3];
 
+                    if (i == j && (k == i0 || k == i1 || k == i2 || k == i3)) continue;
+
+                    var x0 = soft_j.positions[i0].clone();
+                    var x1 = soft_j.positions[i1].clone();
+                    var x2 = soft_j.positions[i2].clone();
+                    var x3 = soft_j.positions[i3].clone();
+
+                    //console.log(x2.clone().sub(x1).cross(x3.clone().sub(x1)).dot(x0.clone().sub(x1)));
+                    // Triangle order
+
+                    //     x2
+
+
+                    // x0      x1
+
+                    //     x3
+
+
+                    // x0      x2
+
+                    //     x1
+
+
+                    // x0      x3
+                    
+                    //     x2
+
+
+                    // x1      x3
+                    
+                    var N1 = x1.clone().sub(x0).cross(x2.clone().sub(x0)).normalize();
                     var x0_p = p.clone().sub(x0);
-                    var N = x2.clone().sub(x0).cross(x1.clone().sub(x0));
 
-                    if (p.clone().dot(N) < 0) {
-                      var proj = p.clone().add(N.normalize().multiplyScalar(-x0_p.clone().dot(N)));
-
-                      // Check if proj is inside triangle
-
-                      // if so, update p to proj
+                    var which = 0;
+                    var mind = 1000.0;
+                    var d = x0_p.dot(N1);
+                    if (d >= 0) continue;
+                    if (-d < mind) {
+                      mind = -d;
+                      which = 1;
                     }
-                    //console.log(N);
+
+                    var N2 = x2.clone().sub(x0).cross(x3.clone().sub(x0)).normalize();
+                    d = x0_p.dot(N2);
+                    if (d >= 0) continue;
+                    if (-d < mind) {
+                      mind = -d;
+                      which = 2;
+                    }
+
+                    var N3 = x3.clone().sub(x0).cross(x1.clone().sub(x0)).normalize();
+                    d = x0_p.dot(N3);
+                    if (d >= 0) continue;
+                    if (-d < mind) {
+                      mind = -d;
+                      which = 3;
+                    }
+
+                    var N4 = x3.clone().sub(x1).cross(x2.clone().sub(x1)).normalize();
+                    var x1_p = p.clone().sub(x1);
+                    d = x1_p.dot(N4);
+                    if (d > 0) continue;
+                    if (-d < mind) {
+                      mind = -d;
+                      which = 4;
+                    }
+
+                    // Now p is in tetrahedron!
+                    console.log(mind);
+
+                    switch (which) {
+                      case 1: p.add(N1.multiplyScalar(mind)); break;
+                      case 2: p.add(N2.multiplyScalar(mind)); break;
+                      case 3: p.add(N3.multiplyScalar(mind)); break;
+                      case 4: p.add(N4.multiplyScalar(mind)); break;
+                      default: break;
+                    }
+                    
+                    
                   }
                 }
               }
             }
+            */
+
+            /* 
+            // This only checks whether a point is in opposite direction to normal of triangle
+            // It doesn't check point is inside the material!
+            // Tetrahedral solution is necessary
+            for (let i = 0; i < softmeshes.length; i++) {
+              var soft_i = softmeshes[i];
+
+              for (let j = 0; j < softmeshes.length; j++) {              
+                var soft_j = softmeshes[j];
+
+                for (let k = 0; k < soft_i.surfaceindices.length; k++) {
+                  var p = soft_i.positions[soft_i.surfaceindices[k]];
+
+                  var proj = p.clone();
+                  var mind = 1000.0;
+
+                  for (let l = 0; l < soft_j.indices.length / 3; l++) {
+                    
+                    //    x1
+
+
+                    //x0      x2
+
+                    var i0 = soft_j.indices[3 * l];
+                    var i1 = soft_j.indices[3 * l + 1];
+                    var i2 = soft_j.indices[3 * l + 2];
+
+                    var x0 = soft_j.positions[i0].clone();
+                    var x1 = soft_j.positions[i1].clone();
+                    var x2 = soft_j.positions[i2].clone();
+
+                    var x0_p = p.clone().sub(x0);
+                    var N = x2.clone().sub(x0).cross(x1.clone().sub(x0.clone())).normalize();
+
+                    if (x0_p.dot(N) < 0) {
+                      var d = -(x0_p.dot(N));
+                      var temp = p.clone().add(N.multiplyScalar(d));
+
+                      x0.sub(temp);
+                      x1.sub(temp);
+                      x2.sub(temp);
+
+                      var u = x1.clone().cross(x0);
+                      var v = x2.clone().cross(x1);
+                      var z = x0.clone().cross(x2);
+
+                      if (u.dot(v) < 0) continue;
+                      if (v.dot(z) < 0) continue;
+
+                      if (d < mind) {
+                        proj = temp;
+                        mind = d;
+                      }
+                    }
+
+                    if (mind < 999.0) {
+                      console.log(mind);
+                      p = proj;
+                    }
+                  }
+                  //console.log(N);
+                }
+              }
+            }
+            */
+            
 
             for (let i = 0; i < softmeshes.length; i++) {
                 softmeshes[i].update();
@@ -444,7 +619,63 @@
             for (let i = 0; i < rigidmeshes.length; i++) {
                 rigidmeshes[i].update();
             }
-      //bunny.update();
+
+            /*
+            for (let i = 0; i < softmeshes.length; i++) {
+              var soft_i = softmeshes[i];
+
+              for (let j = 0; j < softmeshes.length; j++) {              
+                var soft_j = softmeshes[j];
+
+                for (let k = 0; k < soft_i.surfaceindices.length; k++) {
+                  var p = soft_i.positions[soft_i.surfaceindices[k]];
+
+                  for (let l = 0; l < soft_j.surfacetetindices.length / 4; l++) {
+                    // Triangles, clockwise ordered from outside
+                    var i0 = soft_j.surfacetetindices[4 * l];
+                    var i1 = soft_j.surfacetetindices[4 * l + 1];
+                    var i2 = soft_j.surfacetetindices[4 * l + 2];
+
+                    // last vertex, not in surface
+                    var i3 = soft_j.surfacetetindices[4 * l + 3];
+
+                    if (i == j && (i == i0 || i == i1 || i == i2 || i == i3)) continue;
+
+                    var x0 = soft_j.positions[i0].clone();
+                    var x1 = soft_j.positions[i1].clone();
+                    var x2 = soft_j.positions[i2].clone();
+                    var x3 = soft_j.positions[i3].clone();
+
+                    //console.log(x1.clone().sub(x0).cross(x2.clone().sub(x0)).dot(x3.clone().sub(x0)));
+
+                    var N = x2.clone().sub(x1).cross(x3.clone().sub(x1)).normalize();
+                    var x1_p = p.clone().sub(x1);
+                    var d = N.dot(x1_p);
+                    if (d >= 0.0) continue;
+
+                    N = x1.clone().sub(x0).cross(x3.clone().sub(x0)).normalize();
+                    var x0_p = p.clone().sub(x0);
+                    d = N.dot(x0_p);
+                    if (d >= 0.0) continue;
+
+                    N = x3.clone().sub(x0).cross(x2.clone().sub(x0)).normalize();
+                    d = N.dot(x0_p);
+                    if (d >= 0.0) continue;
+
+                    N = x2.clone().sub(x0).cross(x1.clone().sub(x0)).normalize();
+                    d = N.dot(x0_p);
+                    if (d >= 0.0) continue;
+
+                    console.log("Inside");
+                    //p.add(N.multiplyScalar(-d));
+                    p.add(N.multiplyScalar(-d));
+                    continue;
+                    
+                  }
+                }
+              }
+            }
+            */
         }
 
         renderer.render(scene, camera);
@@ -455,6 +686,37 @@
         dist = Number(this.value) * 0.01;
         document.getElementById("SliderValue01").innerHTML = dist.toFixed(2).toString();
     }
+
+    /*
+            0
+          /     2
+        3    
+              1
+    */
+    tetraFile = {
+        "name" : "tetrahedron",
+        "verts" : [
+            0.000, Math.sqrt(6) / 3,  0.000,
+            Math.sqrt(3) / 3, 0.000,  0.000,
+            -Math.sqrt(3) / 6, 0.000,  0.500,
+            -Math.sqrt(3) / 6, 0.000, -0.500,
+        ],
+        "tetIds" : [
+            0, 2, 1, 3
+        ],
+        "tetEdgeIds" : [
+            0,1, 0,2, 0,3, 1,2, 2,3, 3,1
+        ],
+        "tetSurfaceTriIds" : [
+            0,2,1, 0,3,2, 0,1,3, 1,2,3
+        ],
+        "tetSurfaceVertIds" : [
+            0, 1, 2, 3
+        ],
+        "surfaceTets" : [
+            0, 1, 2,3
+        ]
+    };
 
     bunnyFile = {
               "name" : "bunnyTets",
@@ -1049,6 +1311,33 @@
                 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 
                 208, 209, 210, 214, 215, 234, 235, 236, 237, 248, 249, 250, 251, 252, 253, 256, 259, 
                 275, 278, 287, 292, 297, 308, 312, 316, 321, 328, 332],
+              "surfaceTets" : [51, 33, 186, 100, 100, 51, 186, 33, 197, 1, 206, 283, 4, 3, 5, 247, 3, 4, 9, 247, 
+                108, 14, 163, 174, 163, 14, 174, 108, 5, 3, 148, 50, 50, 5, 148, 3, 32, 70, 71, 225, 54, 75, 135, 4, 
+                8, 7, 9, 245, 7, 8, 209, 107, 8, 107, 209, 7, 26, 156, 158, 255, 40, 36, 45, 232, 182, 12, 187, 199, 
+                187, 12, 199, 182, 166, 195, 198, 220, 4, 6, 9, 246, 124, 93, 143, 63, 15, 28, 115, 301, 132, 26, 158, 295, 
+                90, 32, 208, 211, 30, 8, 207, 150, 100, 195, 196, 220, 18, 17, 32, 211, 80, 47, 169, 217, 16, 88, 152, 162, 
+                16, 152, 162, 88, 292, 297, 316, 293, 148, 1, 160, 84, 84, 148, 160, 1, 83, 154, 157, 325, 115, 87, 142, 96, 
+                96, 115, 142, 87, 35, 40, 41, 218, 41, 23, 43, 194, 41, 43, 194, 23, 12, 13, 28, 279, 10, 35, 141, 218, 
+                17, 18, 195, 211, 33, 51, 251, 248, 22, 63, 98, 93, 28, 15, 29, 300, 77, 37, 128, 294, 59, 63, 143, 93, 
+                93, 59, 143, 63, 68, 37, 87, 320, 8, 6, 207, 54, 175, 57, 183, 269, 195, 166, 196, 220, 80, 31, 170, 217, 
+                19, 32, 168, 213, 19, 18, 32, 211, 166, 188, 196, 220, 195, 100, 208, 220, 24, 25, 49, 81, 25, 24, 81, 49, 
+                205, 90, 208, 222, 59, 44, 82, 69, 69, 59, 82, 44, 36, 48, 88, 219, 23, 24, 49, 43, 43, 23, 49, 24, 
+                36, 35, 169, 219, 62, 22, 134, 124, 22, 124, 134, 62, 124, 62, 134, 22, 68, 87, 115, 320, 29, 15, 38, 300, 
+                38, 15, 96, 319, 184, 149, 192, 318, 35, 36, 40, 218, 40, 23, 41, 53, 23, 40, 53, 41, 81, 24, 104, 43, 
+                42, 168, 214, 213, 42, 11, 198, 212, 31, 46, 168, 214, 168, 46, 214, 31, 79, 31, 80, 217, 45, 44, 93, 98, 
+                16, 44, 45, 232, 36, 16, 45, 232, 79, 80, 169, 217, 47, 48, 169, 217, 46, 31, 79, 216, 1, 3, 206, 284, 
+                54, 55, 150, 233, 63, 59, 69, 98, 63, 69, 98, 59, 33, 107, 186, 7, 6, 4, 207, 54, 55, 94, 150, 233, 
+                92, 77, 114, 294, 18, 19, 42, 213, 70, 89, 109, 222, 136, 183, 191, 251, 136, 191, 251, 183, 132, 39, 
+180, 295, 144, 146, 147, 306, 156, 132, 158, 200, 132, 156, 200, 158, 64, 149, 184, 329, 73, 151, 193, 322, 85, 21, 151, 332, 24, 23, 53, 164, 67, 52, 164, 53, 45, 22, 181, 93, 98, 53, 181, 231, 34, 52, 67, 228, 185, 132, 192, 314, 18, 42, 198, 212, 48, 47, 60, 153, 47, 56, 60, 176, 56, 47, 
+176, 60, 131, 50, 148, 3, 142, 111, 155, 328, 111, 142, 328, 155, 97, 95, 110, 332, 97, 110, 332, 95, 122, 74, 146, 326, 121, 39, 185, 314, 32, 71, 168, 213, 168, 71, 215, 227, 103, 119, 153, 162, 153, 119, 162, 103, 89, 70, 90, 222, 78, 92, 114, 289, 37, 77, 92, 313, 83, 78, 84, 289, 47, 80, 189, 217, 80, 170, 189, 217, 61, 25, 81, 101, 25, 61, 101, 81, 43, 49, 101, 81, 24, 67, 104, 164, 104, 67, 164, 24, 82, 182, 187, 244, 87, 37, 92, 317, 92, 83, 157, 309, 78, 72, 84, 289, 66, 65, 85, 91, 85, 65, 130, 91, 65, 91, 130, 85, 49, 25, 101, 81, 96, 15, 115, 319, 16, 36, 88, 232, 76, 103, 153, 230, 129, 125, 139, 273, 127, 131, 133, 3, 166, 34, 190, 223, 70, 32, 90, 222, 65, 66, 73, 147, 65, 73, 147, 66, 111, 20, 130, 332, 22, 62, 63, 124, 116, 75, 173, 207, 75, 116, 207, 173, 89, 90, 205, 222, 32, 17, 208, 211, 55, 205, 208, 235, 99, 144, 321, 302, 111, 154, 332, 325, 66, 85, 151, 332, 1, 2, 160, 305, 97, 83, 160, 305, 53, 40, 181, 231, 44, 59, 93, 98, 177, 145, 202, 302, 100, 94, 208, 220, 8, 30, 107, 186, 107, 30, 186, 8, 61, 81, 86, 101, 61, 86, 101, 81, 43, 101, 102, 81, 86, 81, 102, 101, 101, 86, 102, 81, 43, 102, 104, 81, 102, 81, 104, 43, 51, 100, 196, 220, 31, 168, 215, 214, 76, 70, 109, 225, 71, 70, 76, 225, 109, 106, 123, 238, 11, 34, 166, 212, 13, 113, 126, 258, 104, 164, 194, 23, 46, 
+11, 214, 216, 72, 78, 114, 289, 114, 77, 128, 294, 30, 173, 186, 150, 173, 150, 186, 30, 174, 75, 207, 163, 163, 174, 207, 75, 135, 75, 174, 4, 4, 5, 163, 108, 5, 108, 163, 4, 21, 20, 110, 332, 259, 256, 275, 274, 74, 64, 91, 326, 96, 142, 155, 331, 107, 33, 112, 7, 137, 112, 165, 209, 113, 
+109, 123, 241, 103, 76, 113, 241, 105, 68, 126, 280, 75, 54, 150, 207, 14, 108, 117, 174, 108, 5, 118, 117, 117, 108, 118, 5, 133, 72, 140, 289, 13, 103, 113, 260, 27, 188, 190, 239, 162, 119, 182, 244, 120, 62, 134, 159, 62, 120, 159, 134, 120, 134, 159, 62, 146, 91, 147, 323, 64, 96, 155, 
+330, 26, 132, 180, 295, 39, 121, 180, 203, 180, 121, 203, 39, 128, 105, 129, 273, 123, 106, 125, 254, 89, 106, 109, 238, 62, 124, 143, 63, 22, 45, 124, 93, 45, 93, 124, 22, 139, 125, 140, 273, 113, 123, 129, 258, 68, 28, 126, 280, 259, 275, 278, 274, 9, 179, 206, 262, 78, 83, 92, 289, 135, 117, 205, 247, 106, 117, 118, 205, 117, 106, 205, 118, 123, 125, 129, 258, 114, 128, 139, 273, 126, 113, 129, 258, 21, 85, 130, 332, 118, 50, 131, 
+127, 127, 118, 131, 50, 133, 131, 148, 3, 38, 192, 200, 299, 58, 57, 180, 26, 62, 143, 161, 63, 143, 63, 161, 62, 3, 1, 148, 133, 84, 133, 148, 1, 84, 72, 133, 284, 17, 195, 208, 220, 94, 55, 208, 235, 55, 135, 205, 250, 58, 180, 203, 290, 57, 58, 204, 269, 136, 26, 175, 269, 27, 26, 136, 255, 172, 167, 178, 202, 167, 172, 202, 178, 209, 172, 210, 138, 127, 140, 250, 268, 140, 125, 250, 273, 114, 139, 140, 273, 34, 11, 171, 226, 99, 0, 178, 303, 144, 147, 321, 323, 99, 73, 193, 321, 73, 99, 321, 193, 0, 99, 193, 321, 30, 116, 173, 207, 116, 30, 207, 173, 95, 2, 151, 193, 151, 2, 193, 95, 110, 20, 111, 332, 110, 111, 332, 20, 91, 111, 130, 332, 48, 60, 152, 153, 152, 60, 153, 48, 56, 71, 76, 176, 71, 56, 176, 76, 60, 56, 
+76, 176, 0, 2, 197, 304, 154, 111, 328, 325, 297, 292, 312, 315, 91, 64, 111, 327, 119, 12, 182, 260, 136, 175, 183, 269, 87, 92, 142, 313, 63, 62, 159, 161, 63, 159, 161, 62, 134, 62, 161, 159, 159, 134, 161, 62, 82, 44, 162, 232, 82, 162, 182, 244, 11, 46, 171, 216, 4, 163, 207, 75, 14, 117, 135, 174, 14, 135, 174, 117, 141, 52, 171, 228, 164, 52, 194, 53, 24, 53, 67, 164, 138, 137, 165, 209, 172, 179, 210, 261, 136, 51, 196, 188, 172, 178, 179, 281, 42, 19, 168, 213, 88, 48, 152, 219, 48, 36, 169, 219, 170, 176, 189, 215, 46, 10, 141, 216, 172, 138, 202, 261, 9, 7, 210, 262, 175, 26, 180, 57, 57, 175, 180, 26, 176, 47, 189, 217, 60, 76, 153, 176, 144, 145, 177, 302, 145, 167, 202, 302, 145, 99, 167, 302, 178, 0, 197, 
+179, 179, 178, 197, 0, 191, 33, 251, 265, 67, 53, 98, 231, 40, 45, 181, 232, 22, 98, 181, 93, 156, 27, 190, 255, 38, 184, 192, 318, 39, 132, 185, 
+314, 74, 121, 149, 329, 64, 74, 149, 329, 150, 94, 186, 245, 67, 98, 187, 69, 98, 69, 187, 67, 27, 136, 196, 188, 188, 27, 196, 136, 199, 156, 201, 259, 26, 27, 156, 255, 156, 190, 201, 242, 103, 13, 119, 243, 188, 166, 190, 223, 138, 165, 191, 265, 183, 57, 204, 269, 202, 138, 204, 261, 2, 
+95, 97, 322, 43, 104, 194, 23, 141, 41, 194, 218, 195, 18, 198, 212, 11, 166, 198, 212, 12, 29, 199, 278, 13, 12, 119, 260, 192, 132, 200, 299, 29, 38, 200, 299, 190, 34, 201, 242, 165, 33, 191, 265, 58, 203, 204, 285, 203, 202, 204, 285, 138, 191, 204, 265, 122, 146, 177, 306, 121, 122, 177, 203, 121, 177, 203, 122, 106, 118, 127, 250, 106, 127, 250, 118, 179, 197, 206, 282, 127, 133, 140, 268, 2, 0, 193, 304, 2, 1, 197, 304, 75, 150, 173, 207, 106, 89, 205, 238, 137, 138, 172, 209, 137, 172, 209, 138, 112, 33, 165, 209, 7, 209, 210, 33, 107, 112, 137, 209, 107, 137, 209, 112, 179, 9, 210, 262, 11, 42, 214, 213, 170, 71, 176, 215, 71, 170, 215, 176, 10, 46, 79, 216, 46, 141, 171, 216, 52, 34, 171, 228, 170, 31, 215, 217, 35, 10, 79, 218, 35, 41, 141, 218, 52, 141, 194, 231, 44, 16, 162, 232, 35, 79, 169, 219, 51, 136, 251, 236, 76, 109, 113, 241, 34, 187, 201, 242, 34, 67, 187, 228, 191, 183, 204, 269, 69, 82, 187, 228, 152, 153, 162, 230, 55, 54, 135, 233, 94, 100, 186, 234, 236, 234, 252, 51, 237, 235, 249, 236, 125, 106, 250, 254, 248, 236, 252, 249, 105, 126, 129, 277, 187, 199, 201, 242, 6, 8, 9, 245, 3, 9, 206, 263, 5, 50, 118, 247, 12, 28, 29, 279, 234, 236, 248, 249, 237, 249, 253, 236, 234, 248, 252, 51, 235, 237, 253, 250, 249, 235, 253, 250, 37, 68, 105, 298, 256, 259, 278, 260, 199, 29, 200, 278, 177, 202, 203, 306, 142, 92, 157, 313, 121, 74, 122, 329, 128, 129, 139, 273, 156, 199, 200, 278, 275, 256, 278, 260, 28, 68, 115, 301, 28, 13, 126, 280, 144, 99, 145, 302, 146, 144, 177, 306, 83, 97, 154, 305, 72, 114, 140, 289, 149, 121, 185, 329, 37, 105, 128, 294, 292, 308, 312, 311, 149, 185, 192, 318, 312, 292, 316, 293, 38, 96, 184, 319, 167, 99, 178, 302, 2, 97, 160, 305, 83, 84, 160, 305, 111, 64, 155, 327, 287, 292, 312, 309, 308, 287, 312, 309, 292, 287, 308, 311, 297, 312, 316, 315, 73, 66, 151, 322, 147, 73, 321, 66, 74, 91, 146, 326, 154, 97, 332, 325, 21, 110, 151, 332, 110, 142, 157, 328, 142, 110, 328, 157, 110, 157, 328, 142, 157, 154, 328, 325, 96, 64, 184, 330, 91, 65, 147, 332, 20, 21, 130, 332, 110, 95, 151, 332]
     };
     // document.write(bunnyFile['verts']);
     var bunny = new SoftBodyObject(bunnyFile, scene, new THREE.Vector3(0,1,0));
@@ -1063,7 +1352,7 @@
     timestepslider.oninput = function() {
       timestepoutput.innerHTML = this.value / 1000.0;
       timestepsize = this.value / 1000.0;
-      console.log(timestepsize);
+      //console.log(timestepsize);
     }
 
     var numstepslider = document.getElementById("Slider02");
@@ -1072,8 +1361,96 @@
     numstepslider.oninput = function() {
       numstepoutput.innerHTML = this.value;
       numstepsize = this.value;
-      console.log(numstepsize);
+      //console.log(numstepsize);
     }
+
+    var raycaster = new THREE.Raycaster();
+    var mouse = new THREE.Vector2();
+    var clickedobject = 0;
+    var intersectionPoint = new THREE.Vector3();
+    var planeN = new THREE.Vector3();
+    var plane = new THREE.Plane();
+    var prevpos = new THREE.Vector3();
+    var savenum = -1;
+
+    let onMouseDown = function (e) {
+      var gapX = e.clientX - e.offsetX;
+      var gapY = e.clientY - e.offsetY;
+
+      mouse.x = ((e.clientX - gapX) / ( window.innerWidth )) * 2 - 1;
+      mouse.y =  - ((e.clientY - gapY) / ( window.innerHeight )) * 2 + 1;
+      raycaster.setFromCamera( mouse, camera );
+      
+      const intersects = raycaster.intersectObjects( scene.children );
+      if (intersects.length == 0) return;
+
+      var mind = 1000.0;
+      for (let i = 0; i < intersects.length; i++) {
+        if (intersects[i].distance < mind) {
+          if (intersects[i].object.name.substr(0, 5) == "Rigid") {
+            controls.enabled = false;
+            clickedobject = intersects[i];
+            savenum = Number(intersects[i].object.name.substr(5));
+            rigidmeshes[savenum].clicked = 1;
+            mind = intersects[i].distance;
+          }
+          else if (intersects[i].object.name.substr(0, 4) == "Soft") {
+            controls.enabled = false;
+            clickedobject = intersects[i];
+            prevpos = clickedobject.point;
+            savenum = Number(intersects[i].object.name.substr(4));
+            softmeshes[savenum].clicked = 1;
+            mind = intersects[i].distance;
+          }
+        }
+      }
+    }
+    let onMouseUp = function(e) {
+      if (clickedobject != 0) {
+        if (clickedobject.object.name.substr(0, 5) == "Rigid")  {
+          rigidmeshes[savenum].clicked = 0;
+        }
+        else if (clickedobject.object.name.substr(0, 4) == "Soft") {
+          softmeshes[savenum].clicked = 0;
+        }
+      }
+      clickedobject = 0;
+      controls.enabled = true;
+      savepos = [];
+    }
+    let onMouseMove = function(e) {
+      if (clickedobject != 0) {
+        var gapX = e.clientX - e.offsetX;
+        var gapY = e.clientY - e.offsetY;
+        var basis = clickedobject.point;
+        planeN.copy(camera.position).sub(basis).normalize();
+        plane.setFromNormalAndCoplanarPoint(planeN, basis);
+
+        mouse.x = ((e.clientX - gapX) / ( window.innerWidth )) * 2 - 1;
+        mouse.y =  - ((e.clientY - gapY) / ( window.innerHeight )) * 2 + 1;
+        raycaster.setFromCamera( mouse, camera );
+        raycaster.ray.intersectPlane(plane, intersectionPoint);
+        
+        //console.log(intersectionPoint);
+        if (clickedobject.object.name.substr(0, 5) == "Rigid")  {
+          rigidmeshes[savenum].position = intersectionPoint.clone();
+          rigidmeshes[savenum].update();
+        }
+        else if (clickedobject.object.name.substr(0, 4) == "Soft") {
+          var soft = softmeshes[savenum];
+          //soft.positions[clickedobject.face.a] = intersectionPoint.clone();
+          for (let i = 0; i < soft.positions.length; i++) {
+            soft.positions[i].add(intersectionPoint.clone().sub(prevpos));
+          }
+          soft.update();
+        }
+        prevpos = intersectionPoint.clone();
+      }
+    }
+    window.addEventListener("mousedown", onMouseDown, false);
+    window.addEventListener("mouseup", onMouseUp, false);
+    window.addEventListener("mousemove", onMouseMove, false);
+    
   </script>
 </body>
 
