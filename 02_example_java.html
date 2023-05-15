@@ -132,6 +132,7 @@
             this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({color : 0x00f00f, flatShading : false}));
             this.mesh.geometry.computeVertexNormals();
             this.mesh.name = "Soft" + softnum;
+            this.num = softnum;
             softnum += 1;
             _scene.add(this.mesh);
 
@@ -140,7 +141,7 @@
             this.edge_geometry.setAttribute('position', new THREE.BufferAttribute(this.vertices, 3));
 
             this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({color :0xffffff}));
-            //_scene.add(this.edges);
+            _scene.add(this.edges);
 
             this.h = 0.05;
             this.n = parseInt(1 / this.h);
@@ -441,7 +442,66 @@
               }
             }
             
+            for (let i = 0; i < softmeshes.length; i++) {
+              var soft_i = softmeshes[i];
 
+              for (let j = i; j < softmeshes.length; j++) {              
+                var soft_j = softmeshes[j];
+
+                for (let k = 0; k < soft_i.surfaceindices.length; k++) {
+                  var x = soft_i.surfaceindices[k];
+                  var p = soft_i.positions[x];
+
+                  for (let l = 0; l < soft_j.surfacetetindices.length / 4; l++) {
+                    // Triangles, clockwise ordered from outside
+                    var i0 = soft_j.surfacetetindices[4 * l];
+                    var i1 = soft_j.surfacetetindices[4 * l + 1];
+                    var i2 = soft_j.surfacetetindices[4 * l + 2];
+
+                    // last vertex, not in surface
+                    var i3 = soft_j.surfacetetindices[4 * l + 3];
+
+                    if (i == j && (x == i0 || x == i1 || x == i2 || x == i3)) continue;
+
+                    var x0 = soft_j.positions[i0];
+                    var x1 = soft_j.positions[i1];
+                    var x2 = soft_j.positions[i2];
+                    var x3 = soft_j.positions[i3];
+
+                    //console.log(x1.clone().sub(x0).cross(x2.clone().sub(x0)).dot(x3.clone().sub(x0)));
+
+                    var N = x2.clone().sub(x1).cross(x3.clone().sub(x1)).normalize();
+                    var x1_p = p.clone().sub(x1);
+                    var d = N.dot(x1_p);
+                    if (d >= 0.0) continue;
+
+                    N = x1.clone().sub(x0).cross(x3.clone().sub(x0)).normalize();
+                    var x0_p = p.clone().sub(x0);
+                    d = N.dot(x0_p);
+                    if (d >= 0.0) continue;
+
+                    N = x3.clone().sub(x0).cross(x2.clone().sub(x0)).normalize();
+                    d = N.dot(x0_p);
+                    if (d >= 0.0) continue;
+
+                    N = x2.clone().sub(x0).cross(x1.clone().sub(x0)).normalize();
+                    d = N.dot(x0_p);
+                    if (d >= 0.0) continue;
+
+                    console.log("Inside");
+                    //p.add(N.multiplyScalar(-d));
+                    p.sub(N.multiplyScalar(d * 2));
+                    x0.add(N);
+                    x1.add(N);
+                    x2.add(N);
+                    x3.add(N);
+
+                    continue;
+                    
+                  }
+                }
+              }
+            }
             /*
             // Check for all tetrahedrons
             // project to nearest surface -> wrong implementation
@@ -619,63 +679,6 @@
             for (let i = 0; i < rigidmeshes.length; i++) {
                 rigidmeshes[i].update();
             }
-
-            /*
-            for (let i = 0; i < softmeshes.length; i++) {
-              var soft_i = softmeshes[i];
-
-              for (let j = 0; j < softmeshes.length; j++) {              
-                var soft_j = softmeshes[j];
-
-                for (let k = 0; k < soft_i.surfaceindices.length; k++) {
-                  var p = soft_i.positions[soft_i.surfaceindices[k]];
-
-                  for (let l = 0; l < soft_j.surfacetetindices.length / 4; l++) {
-                    // Triangles, clockwise ordered from outside
-                    var i0 = soft_j.surfacetetindices[4 * l];
-                    var i1 = soft_j.surfacetetindices[4 * l + 1];
-                    var i2 = soft_j.surfacetetindices[4 * l + 2];
-
-                    // last vertex, not in surface
-                    var i3 = soft_j.surfacetetindices[4 * l + 3];
-
-                    if (i == j && (i == i0 || i == i1 || i == i2 || i == i3)) continue;
-
-                    var x0 = soft_j.positions[i0].clone();
-                    var x1 = soft_j.positions[i1].clone();
-                    var x2 = soft_j.positions[i2].clone();
-                    var x3 = soft_j.positions[i3].clone();
-
-                    //console.log(x1.clone().sub(x0).cross(x2.clone().sub(x0)).dot(x3.clone().sub(x0)));
-
-                    var N = x2.clone().sub(x1).cross(x3.clone().sub(x1)).normalize();
-                    var x1_p = p.clone().sub(x1);
-                    var d = N.dot(x1_p);
-                    if (d >= 0.0) continue;
-
-                    N = x1.clone().sub(x0).cross(x3.clone().sub(x0)).normalize();
-                    var x0_p = p.clone().sub(x0);
-                    d = N.dot(x0_p);
-                    if (d >= 0.0) continue;
-
-                    N = x3.clone().sub(x0).cross(x2.clone().sub(x0)).normalize();
-                    d = N.dot(x0_p);
-                    if (d >= 0.0) continue;
-
-                    N = x2.clone().sub(x0).cross(x1.clone().sub(x0)).normalize();
-                    d = N.dot(x0_p);
-                    if (d >= 0.0) continue;
-
-                    console.log("Inside");
-                    //p.add(N.multiplyScalar(-d));
-                    p.add(N.multiplyScalar(-d));
-                    continue;
-                    
-                  }
-                }
-              }
-            }
-            */
         }
 
         renderer.render(scene, camera);
