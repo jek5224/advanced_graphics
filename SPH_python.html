@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>SPH Simulation</title>
+	<style>
+		body {
+			margin: 0;
+		}
+
+		.button{
+				background-color: #606060;
+				border: none;
+				color: white;
+				padding: 10px 32px;
+				font-size: 16px;
+				margin: 4px 2px;
+				cursor: pointer;
+		}
+		.slider{
+				-webkit-appearance: none;
+				width: 80px;
+				height: 6px;
+				border-radius: 5px;
+				background: #d3d3d3;
+				outline: none;
+				opacity: 0.7;
+				-webkit-transition: .2s;
+				transition: opacity .2s;
+		}
+
+	</style>
+</head>
+
+<body>
+
+	<button class="button" onclick="run()">Run/Pause</button>
+	<button class="button" onclick="reset()">Restart</button>
+	
+	Parameter 01<input type = "range" min = "0" max = "1000" value = "0" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.0</span>
+
+	<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+	<script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+	<script>
+	</script>
+	<script>
+		
+		var scene = new THREE.Scene();
+		scene.background = new THREE.Color(0xffffff);
+
+		const renderer = new THREE.WebGLRenderer({ antialias: true });
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		document.body.appendChild(renderer.domElement);
+
+		const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+		camera.position.set(0, 4, 0);
+
+		const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    // Disable Rotations, Zoom in/out only
+    controls.maxAzimuthAngle = 2 * Math.PI;
+    controls.minAzimuthAngle = 2 * Math.PI;
+    controls.maxPolarAngle = -2 * Math.PI;
+    controls.minPolarAngle = -2 * Math.PI;
+		controls.listenToKeyEvents(window); // optional
+
+		window.onresize = function() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+		};
+
+		function run() {scene.paused = !scene.paused;}
+		
+		scene.paused = true;
+
+		// Light Setting 
+		// scene.add(new THREE.AmbientLight( 0xaaaaaa ));
+
+    const boundary_x = 6;
+    const boundary_y = 4;
+    // Define environments
+    var boundary = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(boundary_x , boundary_y, 1, 1)), new THREE.LineBasicMaterial({ color: 0X0000000 }));
+    boundary.rotation.x = -Math.PI * 0.5;
+    scene.add(boundary);
+
+    const home_x = 0.5;
+    const home_y = 0.5;
+
+    var home_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(home_x , home_y, 1, 1)), new THREE.LineBasicMaterial({ color: 0X76af4d }));
+    home_edge.rotation.x = -Math.PI * 0.5;
+    home_edge.position.set(boundary_x / 2.0 - home_x / 2.0, 0, boundary_y / 2.0 - home_y / 2.0);
+    scene.add(home_edge);
+
+    var home = new THREE.Mesh(new THREE.PlaneBufferGeometry(home_x,home_y,1,1), new THREE.MeshBasicMaterial({ color: 0Xe2f0d9 } ));
+    home.rotation.x = -Math.PI * 0.5;
+    home.position.set(boundary_x / 2.0 - home_x / 2.0, 0.0000001, boundary_y / 2.0 - home_y / 2.0);
+    scene.add(home);
+
+    const wall_x = 0.5;
+    var h = 1;
+    var x = 2;
+
+    var wall_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(wall_x , h, 1, 1)), new THREE.LineBasicMaterial({ color: 0X315492 }));
+    wall_edge.rotation.x = -Math.PI * 0.5;
+    wall_edge.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, 0.0000001, boundary_y / 2.0 - h / 2.0);
+    scene.add(wall_edge);
+
+    var wall = new THREE.Mesh(new THREE.PlaneBufferGeometry(wall_x,h,1,1), new THREE.MeshBasicMaterial({ color: 0X7f7f7f } ));
+    wall.rotation.x = -Math.PI * 0.5;
+    wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, 0.0000001, boundary_y / 2.0 - h / 2.0);
+    scene.add(wall);
+
+    const rho_water = 997 // kg / m^3
+
+    var particles = []
+
+    class Particle {
+      constructor(_scene, r, pos) {
+        this.r = r;
+        this.volume = 4.0 / 3.0 * Math.PI * r * r * r;
+        this.rho = rho_water;
+        this.mass = this.volume * this.rho;
+        this.p = 0;
+        this.position = pos;
+        this.velocity = new THREE.Vector3(0,0,0);
+
+        this.geometry = new THREE.CircleGeometry(r, 32);
+        this.material = new THREE.MeshBasicMaterial({ color : 0X05b0f0 });
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+        this.mesh.rotation.x = -Math.PI * 0.5;
+        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+
+        _scene.add(this.mesh);
+      }
+
+      print() {
+        console.log("radius: " + this.r + " m" +
+          "\nvolume: " + this.volume + " m^3" +
+          "\nmass: " + this.mass + " kg" +
+          "\ndensity: " + this.rho + " kg/m^3" +
+          "\npressure: " + this.p + " kg /m s^2" +
+          "\nposition: " + this.position.x + ", " + this.position.y + ", " + this.position.z +
+          "\nvelocity: " + this.velocity.x + ", " + this.velocity.y + ", " + this.velocity.z);
+      }
+
+      render() {
+        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      }
+    }
+
+    const water_x = 1
+    const water_y = 3
+    const num_particles = 300
+    const r = Math.sqrt(water_x * water_y / num_particles) / 2.0;
+
+    for (let i = 0; i < water_x / 2 / r; i++) {
+      for (let j = 0; j < water_y / 2 / r; j++) {
+        particles.push(new Particle(scene, r, new THREE.Vector3(-boundary_x / 2.0 + i * 2 * r + r, 0.0, boundary_y / 2.0 -j * 2 * r - r)));
+      }
+    }
+
+    function run()
+    {
+      scene.paused = !scene.paused;
+    }
+
+    const H = 3.0;
+    const H_square = H * H;
+    const W_c = 315 / (64 * Math.PI * Math.pow(H, 9));
+    const grad_W_c = -45 / (Math.PI * Math.pow(H, 6));
+
+    const k = 100.0;
+    const rho_0 = 5.0;
+
+    const g = 9.8;
+
+    const del_t = 0.001;
+
+    var print_rho = true;
+		function animate() {
+			// controls.update();
+
+      for (let i = 0; i < particles.length; i++) {
+        p_i = particles[i];
+        p_i.rho = 0.0;
+
+        for (let j = 0; j < particles.length; j++) {
+          p_j = particles[j];
+          var d = p_i.position.distanceTo(p_j.position);
+
+          if (d < H) {
+            p_i.rho += W_c * Math.pow((H_square - d * d), 3);
+          }
+        }
+
+        p_i.p = k * (p_i.rho - rho_0);
+
+        var f = new THREE.Vector3(0,0,0);
+        for (let j = 0; j < particles.length; j++) {
+          p_j = particles[j];
+          var dir = p_j.position.clone().sub(p_i.position);
+          var d = dir.length();
+          dir.normalize();
+
+          if (d < H) {
+            f.add(dir.multiplyScalar(grad_W_c * Math.pow((H - d), 2) * p_j.mass / p_j.rho * (p_i.p + p_j.p) / 2.0));
+          }
+        }
+        f.multiplyScalar(-1 / p_i.rho);
+
+        f.add(new THREE.Vector3(0.0, 0.0, g * p_i.mass));
+
+        p_i.velocity.add(f.multiplyScalar(del_t));
+        p_i.position.add(p_i.velocity.multiplyScalar(del_t));
+        //console.log(f);
+
+        //p_i.render();
+      }   
+
+			renderer.render(scene, camera);
+		  requestAnimationFrame(animate);
+      
+    }
+
+		document.getElementById("Slider01").oninput = function() {
+			dist = Number(this.value) * 0.01;
+			document.getElementById("SliderValue01").innerHTML = dist.toFixed(2).toString();
+		}
+
+		animate();
+	</script>
+</body>
+
+</html>
