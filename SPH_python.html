@@ -167,17 +167,19 @@
       scene.paused = !scene.paused;
     }
 
-    const H = 3.0;
+    const H = 2 * r;
     const H_square = H * H;
     const W_c = 315 / (64 * Math.PI * Math.pow(H, 9));
     const grad_W_c = -45 / (Math.PI * Math.pow(H, 6));
 
-    const k = 100.0;
-    const rho_0 = 5.0;
+    const k = 10.0;
+    const rho_0 = 3.0;
 
     const g = 9.8;
 
     const del_t = 0.001;
+
+    const damping = -0.1;
 
     var print_rho = true;
 		function animate() {
@@ -192,14 +194,16 @@
           var d = p_i.position.distanceTo(p_j.position);
 
           if (d < H) {
-            p_i.rho += W_c * Math.pow((H_square - d * d), 3);
+            p_i.rho += p_j.mass * W_c * Math.pow((H_square - d * d), 3);
           }
         }
 
         p_i.p = k * (p_i.rho - rho_0);
 
-        var f = new THREE.Vector3(0,0,0);
+        var f = new THREE.Vector3(0,0,0); // Force
         for (let j = 0; j < particles.length; j++) {
+          if (i == j) continue;
+
           p_j = particles[j];
           var dir = p_j.position.clone().sub(p_i.position);
           var d = dir.length();
@@ -211,13 +215,31 @@
         }
         f.multiplyScalar(-1 / p_i.rho);
 
-        f.add(new THREE.Vector3(0.0, 0.0, g * p_i.mass));
+        f.add(new THREE.Vector3(0.0, 0.0, g * p_i.mass)); // gravity
 
         p_i.velocity.add(f.multiplyScalar(del_t));
-        p_i.position.add(p_i.velocity.multiplyScalar(del_t));
+        p_i.position.add(p_i.velocity.clone().multiplyScalar(del_t));
+
+        if (p_i.position.z > boundary_y / 2.0 - p_i.r) {
+          p_i.velocity.z *= damping;
+          p_i.position.z = boundary_y / 2.0 - p_i.r;
+        }
+        else if (p_i.position.z < -boundary_y / 2.0 + p_i.r) {
+          p_i.velocity.z *= damping;
+          p_i.position.z = -boundary_y / 2.0 + p_i.r;
+        }
+
+        if (p_i.position.x > boundary_x / 2.0 - p_i.r) {
+          p_i.velocity.x *= damping;
+          p_i.position.x = boundary_x / 2.0 - p_i.r;
+        }
+        else if (p_i.position.x < -boundary_x / 2.0 + p_i.r) {
+          p_i.velocity.x *= damping;
+          p_i.position.x = -boundary_x / 2.0 + p_i.r;
+        }
         //console.log(f);
 
-        //p_i.render();
+        p_i.render();
       }   
 
 			renderer.render(scene, camera);
