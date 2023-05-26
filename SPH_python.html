@@ -79,9 +79,13 @@
 		// Light Setting 
 		// scene.add(new THREE.AmbientLight( 0xaaaaaa ));
 
+
+
+
+    // *************************************Define environments*****************************************
     const boundary_x = 6;
     const boundary_y = 4;
-    // Define environments
+    
     var boundary = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(boundary_x , boundary_y, 1, 1)), new THREE.LineBasicMaterial({ color: 0X0000000 }));
     boundary.rotation.x = -Math.PI * 0.5;
     scene.add(boundary);
@@ -113,6 +117,13 @@
     wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, 0.0000001, boundary_y / 2.0 - h / 2.0);
     scene.add(wall);
 
+    // *************************************Define environments*****************************************
+
+
+
+
+
+    // ***************************************Define Particles******************************************
     const rho_water = 997 // kg / m^3
 
     var particles = []
@@ -122,7 +133,8 @@
         this.r = r;
         this.volume = 4.0 / 3.0 * Math.PI * r * r * r;
         this.rho = rho_water;
-        this.mass = this.volume * this.rho;
+        //this.mass = this.volume * this.rho;
+        this.mass = 2.5;
         this.p = 0;
         this.position = pos;
         this.velocity = new THREE.Vector3(0,0,0);
@@ -151,35 +163,46 @@
       }
     }
 
-    const water_x = 1
-    const water_y = 3
-    const num_particles = 300
+    const water_x = 1;
+    const water_y = 3;
+    const num_particles = 300;
     const r = Math.sqrt(water_x * water_y / num_particles) / 2.0;
 
-    for (let i = 0; i < water_x / 2 / r; i++) {
-      for (let j = 0; j < water_y / 2 / r; j++) {
-        particles.push(new Particle(scene, r, new THREE.Vector3(-boundary_x / 2.0 + i * 2 * r + r, 0.0, boundary_y / 2.0 -j * 2 * r - r)));
+    for (let i = 0; i < water_y / 2 / r; i++) {
+      for (let j = 0; j < water_x / 2 / r; j++) {
+        particles.push(new Particle(scene, r, new THREE.Vector3(-boundary_x / 2.0 + j * 2 * r + r, 0.0, -boundary_y / 2.0 + (boundary_y - water_y) + i * 2 * r + r)));
       }
     }
+
+    // ***************************************Define Particles******************************************
 
     function run()
     {
       scene.paused = !scene.paused;
     }
 
-    const H = 2 * r;
+    const H = 16;
     const H_square = H * H;
+    /*
     const W_c = 315 / (64 * Math.PI * Math.pow(H, 9));
     const grad_W_c = -45 / (Math.PI * Math.pow(H, 6));
+    const lapl_W_c = 45 / (Math.PI * Math.pow(H, 6));
+    */
+    
+    const W_c = 4 / (Math.PI * Math.pow(H, 8));
+    const grad_W_c = -30 / (Math.PI * Math.pow(H, 5));
+    const lapl_W_c = 40 / (Math.PI * Math.pow(H, 5));
+    
 
-    const k = 10.0;
-    const rho_0 = 3.0;
+    const k = 300;
+    const rho_0 = 3000; // kg / m^3
+    const nu = 200;
 
-    const g = 9.8;
+    const g = 9.8; // m / s^2
 
-    const del_t = 0.001;
+    const del_t = 0.01;
 
-    const damping = -0.1;
+    const damping = -0.5;
 
     var print_rho = true;
 		function animate() {
@@ -189,6 +212,7 @@
         p_i = particles[i];
         p_i.rho = 0.0;
 
+        // Density
         for (let j = 0; j < particles.length; j++) {
           p_j = particles[j];
           var d = p_i.position.distanceTo(p_j.position);
@@ -198,8 +222,14 @@
           }
         }
 
+        // Pressure
         p_i.p = k * (p_i.rho - rho_0);
+        //p_i.p = Math.max(k * (p_i.rho - rho_0), 0);
+      }
 
+      for (let i = 0; i < particles.length; i++) {
+        p_i = particles[i];
+        // Pressure Force
         var f = new THREE.Vector3(0,0,0); // Force
         for (let j = 0; j < particles.length; j++) {
           if (i == j) continue;
@@ -210,14 +240,17 @@
           dir.normalize();
 
           if (d < H) {
-            f.add(dir.multiplyScalar(grad_W_c * Math.pow((H - d), 2) * p_j.mass / p_j.rho * (p_i.p + p_j.p) / 2.0));
+            f.add(dir.multiplyScalar(-p_j.mass / p_j.rho * (p_i.p + p_j.p) / 2.0 * grad_W_c * Math.pow((H - d), 3)));
+            f.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(nu * p_i.rho * p_j.mass/ p_j.rho * lapl_W_c * (H - d)));
           }
         }
-        f.multiplyScalar(-1 / p_i.rho);
 
-        f.add(new THREE.Vector3(0.0, 0.0, g * p_i.mass)); // gravity
+        // Gravity force
+        f.add(new THREE.Vector3(0.0, 0.0, g * p_i.rho));
 
-        p_i.velocity.add(f.multiplyScalar(del_t));
+        a = f.clone().multiplyScalar(1 / p_i.rho);
+
+        p_i.velocity.add(a.multiplyScalar(del_t));
         p_i.position.add(p_i.velocity.clone().multiplyScalar(del_t));
 
         if (p_i.position.z > boundary_y / 2.0 - p_i.r) {
@@ -237,10 +270,40 @@
           p_i.velocity.x *= damping;
           p_i.position.x = -boundary_x / 2.0 + p_i.r;
         }
+
+        if (p_i.position.z > boundary_y / 2.0 - h - r && p_i.position.z < boundary_y - r) {
+          if (p_i.position.x > -boundary_x / 2.0 + x - r && p_i.position.x < -boundary_x / 2.0 + x + wall_x + r) {
+            var d1 = p_i.position.x + boundary_x / 2.0 - x + r;
+            var d2 = -boundary_x / 2.0 + x + wall_x + r - p_i.position.x;
+            var d3 = p_i.position.z - boundary_y / 2.0 + h + r
+
+            if (d1 < d2 && d1 < d3) {
+              p_i.velocity.x *= damping;
+              p_i.position.x = -boundary_x / 2.0 + x - r;
+            }
+            else if (d2 < d1 && d2 < d3) {
+              p_i.velocity.x *= damping;
+              p_i.position.x = -boundary_x / 2.0 + x + wall_x + r;
+            }
+            else {
+              p_i.velocity.z *= damping;
+              p_i.position.z = boundary_y / 2.0 - h - r;
+            }
+          }
+
+        }// && p_i.position.x < -boundary_x / 2.0 + x + wall_x)
         //console.log(f);
 
         p_i.render();
-      }   
+      }
+
+      /*
+      if (print_rho) {
+        for (let i = 0; i < particles.length; i++)
+          console.log(particles[i].rho);
+        print_rho = false;
+      }
+      */
 
 			renderer.render(scene, camera);
 		  requestAnimationFrame(animate);
