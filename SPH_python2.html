@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>SPH Simulation</title>
+	<style>
+		body {
+			margin: 0;
+		}
+
+		.button{
+				background-color: #606060;
+				border: none;
+				color: white;
+				padding: 10px 32px;
+				font-size: 16px;
+				margin: 4px 2px;
+				cursor: pointer;
+		}
+		.slider{
+				-webkit-appearance: none;
+				width: 80px;
+				height: 6px;
+				border-radius: 5px;
+				background: #d3d3d3;
+				outline: none;
+				opacity: 0.7;
+				-webkit-transition: .2s;
+				transition: opacity .2s;
+		}
+
+	</style>
+</head>
+
+<body>
+
+	<button class="button" onclick="run()">Run/Pause</button>
+	<button class="button" onclick="reset()">Restart</button>
+	
+	Parameter 01<input type = "range" min = "0" max = "1000" value = "0" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.0</span>
+
+	<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+	<script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+	<script>
+	</script>
+	<script>
+		
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
+    camera.position.set(0, 800, 0);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    // Disable Rotations, Zoom in/out only
+    controls.maxAzimuthAngle = 2 * Math.PI;
+    controls.minAzimuthAngle = 2 * Math.PI;
+    controls.maxPolarAngle = -2 * Math.PI;
+    controls.minPolarAngle = -2 * Math.PI;
+    controls.listenToKeyEvents(window); // optional
+
+    window.onresize = function() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    function run() {scene.paused = !scene.paused;}
+    
+    scene.paused = true;
+
+    // Light Setting 
+    // scene.add(new THREE.AmbientLight( 0xaaaaaa ));
+
+    // *************************************Define environments*****************************************
+    /*
+    const boundary_x = 6;
+    const boundary_y = 4;
+    
+    var boundary = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(boundary_x , boundary_y, 1, 1)), new THREE.LineBasicMaterial({ color: 0X0000000 }));
+    boundary.rotation.x = -Math.PI * 0.5;
+    scene.add(boundary);
+
+    const home_x = 0.5;
+    const home_y = 0.5;
+
+    var home_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(home_x , home_y, 1, 1)), new THREE.LineBasicMaterial({ color: 0X76af4d }));
+    home_edge.rotation.x = -Math.PI * 0.5;
+    home_edge.position.set(boundary_x / 2.0 - home_x / 2.0, 0, boundary_y / 2.0 - home_y / 2.0);
+    scene.add(home_edge);
+
+    var home = new THREE.Mesh(new THREE.PlaneBufferGeometry(home_x,home_y,1,1), new THREE.MeshBasicMaterial({ color: 0Xe2f0d9 } ));
+    home.rotation.x = -Math.PI * 0.5;
+    home.position.set(boundary_x / 2.0 - home_x / 2.0, 0.0000001, boundary_y / 2.0 - home_y / 2.0);
+    scene.add(home);
+
+    const wall_x = 0.5;
+    var h = 1;
+    var x = 2;
+
+    var wall_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(wall_x , h, 1, 1)), new THREE.LineBasicMaterial({ color: 0X315492 }));
+    wall_edge.rotation.x = -Math.PI * 0.5;
+    wall_edge.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, 0.0000001, boundary_y / 2.0 - h / 2.0);
+    scene.add(wall_edge);
+
+    var wall = new THREE.Mesh(new THREE.PlaneBufferGeometry(wall_x,h,1,1), new THREE.MeshBasicMaterial({ color: 0X7f7f7f } ));
+    wall.rotation.x = -Math.PI * 0.5;
+    wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, 0.0000001, boundary_y / 2.0 - h / 2.0);
+    scene.add(wall);
+    */
+    // *************************************Define environments*****************************************
+
+
+
+
+
+    // ***************************************Define Particles******************************************
+    const rho_water = 997 // kg / m^3
+
+    var particles = []
+
+    class Particle {
+      constructor(_scene, r, pos) {
+        this.r = r;
+        this.volume = 4.0 / 3.0 * Math.PI * r * r * r;
+        this.rho = rho_water;
+        this.mass = this.volume * this.rho;
+        //this.mass = 2.5;
+        this.p = 0;
+        this.position = pos;
+        this.velocity = new THREE.Vector3(0,0,0);
+        this.f = new THREE.Vector3(0,0,0);
+
+        this.geometry = new THREE.CircleGeometry(r, 32);
+        this.material = new THREE.MeshBasicMaterial({ color : 0X05b0f0 });
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+        this.mesh.rotation.x = -Math.PI * 0.5;
+        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+
+        _scene.add(this.mesh);
+      }
+
+      print() {
+        console.log("radius: " + this.r + " m" +
+          "\nvolume: " + this.volume + " m^3" +
+          "\nmass: " + this.mass + " kg" +
+          "\ndensity: " + this.rho + " kg/m^3" +
+          "\npressure: " + this.p + " kg /m s^2" +
+          "\nposition: " + this.position.x + ", " + this.position.y + ", " + this.position.z +
+          "\nvelocity: " + this.velocity.x + ", " + this.velocity.y + ", " + this.velocity.z);
+      }
+
+      render() {
+        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      }
+    }
+
+    /*
+    const water_x = 1;
+    const water_y = 3;
+    const num_particles = 300;
+    const r = Math.sqrt(water_x * water_y / num_particles) / 2.0;
+    */
+    
+    const H = 16;
+    const H_square = H * H;
+
+    const G = new THREE.Vector3(0.0, 0.0, 10.0);   // external (gravitational) forces
+    const REST_DENS = 300.0;  // rest density
+    const GAS_CONST = 2000.0; // const for equation of state
+    const MASS = 2.5;		   // assume all particles have the same mass
+    const VISC = 200.0;	   // viscosity constant
+    const DT = 0.0007;	   // integration timestep
+
+    const POLY6 = 4.0 / (Math.PI * Math.pow(H, 8.0));
+    const SPIKY_GRAD = -10.0 / (Math.PI * Math.pow(H, 5.0));
+    const VISC_LAP = 40.0 / (Math.PI * Math.pow(H, 5.0));
+
+    const MAX_PARTICLES = 2500;
+    const DAM_PARTICLES = 500;
+    const BLOCK_PARTICLES = 250;
+
+    const WINDOW_WIDTH = 800;
+    const WINDOW_HEIGHT = 600;
+    const VIEW_WIDTH = 1.5 * 800.0;
+    const VIEW_HEIGHT = 1.5 * 600.0;
+    
+    var boundary = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneBufferGeometry(VIEW_WIDTH , VIEW_HEIGHT, 1, 1)), new THREE.LineBasicMaterial({ color: 0X0000000 }));
+    boundary.rotation.x = -Math.PI * 0.5;
+    scene.add(boundary);
+
+    const EPS = H;
+    const BOUND_DAMPING = -0.5;
+
+    /*
+    for (let i = 0; i < water_y / 2 / H; i++) {
+      for (let j = 0; j < water_x / 2 / H; j++) {
+        particles.push(new Particle(scene, H, new THREE.Vector3(-boundary_x / 2.0 + j * 2 * H + H, 0.0, -boundary_y / 2.0 + (boundary_y - water_y) + i * 2 * H + H)));
+      }
+    }
+    */
+
+    for (let y = EPS; y < VIEW_HEIGHT - EPS * 2.0; y += H - 0.1)
+	{
+		for (let x = VIEW_WIDTH / 4; x <= VIEW_WIDTH / 2; x += H - 0.1)
+		{
+			if (particles.length < DAM_PARTICLES)
+			{
+				particles.push(new Particle(scene, H / 2.0, new THREE.Vector3(x - VIEW_WIDTH / 2.0, 0, -y + VIEW_HEIGHT / 2.0)));
+			}
+		}
+	}
+
+    // ***************************************Define Particles******************************************
+
+    function run()
+    {
+      scene.paused = !scene.paused;
+    }
+
+    /*
+    const W_c = 315 / (64 * Math.PI * Math.pow(H, 9));
+    const grad_W_c = -45 / (Math.PI * Math.pow(H, 6));
+    const lapl_W_c = 45 / (Math.PI * Math.pow(H, 6));
+    */
+    
+    const W_c = 4 / (Math.PI * Math.pow(H, 8));
+    const grad_W_c = -30 / (Math.PI * Math.pow(H, 5));
+    const lapl_W_c = 40 / (Math.PI * Math.pow(H, 5));
+    
+
+    const k = 0.001;
+    const rho_0 = rho_water / 2; // kg / m^3
+    const nu = 10;
+
+    const g = 9.8; // m / s^2
+
+    const del_t = 0.01;
+
+    const damping = -0.5;
+
+    var print_rho = true;
+    
+    function animate() {
+        // controls.update();
+
+        for (let i = 0; i < particles.length; i++) {
+            p_i = particles[i];
+            p_i.rho = 0.0;
+
+            // Density
+            for (let j = 0; j < particles.length; j++) {
+                p_j = particles[j];
+                var d = p_i.position.distanceTo(p_j.position);
+
+                if (d < H) {
+                    //p_i.rho += p_j.mass * W_c * Math.pow((H_square - d * d), 3);
+                    p_i.rho += MASS * POLY6 * Math.pow((H_square - d * d), 3);
+                }
+            }
+
+            // Pressure
+            //p_i.p = k * (p_i.rho - rho_0);
+            //p_i.p = Math.max(k * (p_i.rho - rho_0), 0);
+            p_i.p = GAS_CONST * (p_i.rho - REST_DENS);
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+            p_i = particles[i];
+            // Pressure Force
+            var fpress = new THREE.Vector3(0,0,0); // Force
+            var fvisc = new THREE.Vector3(0, 0, 0);
+
+            for (let j = 0; j < particles.length; j++) {
+                if (i == j) continue;
+
+                p_j = particles[j];
+                var dir = p_j.position.clone().sub(p_i.position);
+                var d = dir.length();
+                dir.normalize();
+
+                if (d < H) {
+                    //f.add(dir.multiplyScalar(-p_j.mass / p_j.rho * (p_i.p + p_j.p) / 2.0 * grad_W_c * Math.pow((H - d), 3)));
+                    //f.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(nu * p_i.rho * p_j.mass/ p_j.rho * lapl_W_c * (H - d)));
+                    fpress.add(dir.multiplyScalar(-MASS * (p_i.p + p_j.p) / (2.0 * p_j.rho) * SPIKY_GRAD * Math.pow(H - d, 3.0)));
+                    fvisc.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(VISC * MASS * VISC_LAP * (H - d) / p_j.rho));
+                }
+            }   
+
+            // Gravity force
+            //f.add(new THREE.Vector3(0.0, 0.0, g * p_i.rho));
+            var fgrav = G.clone().multiplyScalar(MASS / p_i.rho);
+
+            p_i.f = fpress.add(fvisc).add(fgrav);
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+            p_i = particles[i];
+
+            p_i.velocity.add(p_i.f.clone().multiplyScalar(DT / p_i.rho));
+            p_i.position.add(p_i.velocity.clone().multiplyScalar(DT));
+
+            if (p_i.position.x - EPS / 2.0 < -VIEW_WIDTH / 2.0) {
+                p_i.velocity.x *= BOUND_DAMPING;
+                p_i.position.x = EPS / 2.0 - VIEW_WIDTH / 2.0;
+            }
+            if (p_i.position.x + EPS / 2.0 > VIEW_WIDTH / 2.0) {
+                p_i.velocity.x *= BOUND_DAMPING;
+                p_i.position.x = VIEW_WIDTH / 2.0 - EPS / 2.0;
+            }
+            if (p_i.position.z - EPS / 2.0 < -VIEW_HEIGHT / 2.0) {
+                p_i.velocity.z *= BOUND_DAMPING;
+                p_i.position.z = EPS / 2.0 - VIEW_HEIGHT / 2.0;
+            }
+            if (p_i.position.z + EPS / 2.0 > VIEW_HEIGHT / 2.0) {
+                p_i.velocity.z *= BOUND_DAMPING;
+                p_i.position.z = VIEW_HEIGHT / 2.0 - EPS / 2.0;
+            }
+
+            /*
+            if (p_i.position.z > boundary_y / 2.0 - p_i.r) {
+                p_i.velocity.z *= damping;
+                p_i.position.z = boundary_y / 2.0 - p_i.r;
+            }
+            else if (p_i.position.z < -boundary_y / 2.0 + p_i.r) {
+                p_i.velocity.z *= damping;
+                p_i.position.z = -boundary_y / 2.0 + p_i.r;
+            }
+
+            if (p_i.position.x > boundary_x / 2.0 - p_i.r) {
+                p_i.velocity.x *= damping;
+                p_i.position.x = boundary_x / 2.0 - p_i.r;
+            }
+            else if (p_i.position.x < -boundary_x / 2.0 + p_i.r) {
+                p_i.velocity.x *= damping;
+                p_i.position.x = -boundary_x / 2.0 + p_i.r;
+            }
+            */
+
+            /*
+            if (p_i.position.z > boundary_y / 2.0 - h - r && p_i.position.z < boundary_y - r) {
+                if (p_i.position.x > -boundary_x / 2.0 + x - r && p_i.position.x < -boundary_x / 2.0 + x + wall_x + r) {
+                    var d1 = p_i.position.x + boundary_x / 2.0 - x + r;
+                    var d2 = -boundary_x / 2.0 + x + wall_x + r - p_i.position.x;
+                    var d3 = p_i.position.z - boundary_y / 2.0 + h + r
+
+                    if (d1 < d2 && d1 < d3) {
+                    p_i.velocity.x *= damping;
+                    p_i.position.x = -boundary_x / 2.0 + x - r;
+                    }
+                    else if (d2 < d1 && d2 < d3) {
+                    p_i.velocity.x *= damping;
+                    p_i.position.x = -boundary_x / 2.0 + x + wall_x + r;
+                    }
+                    else {
+                    p_i.velocity.z *= damping;
+                    p_i.position.z = boundary_y / 2.0 - h - r;
+                    }
+                }
+            }
+            */
+            // && p_i.position.x < -boundary_x / 2.0 + x + wall_x)
+            //console.log(f);
+
+            p_i.render();
+        }
+
+        /*
+        if (print_rho) {
+            for (let i = 0; i < particles.length; i++)
+            console.log(particles[i].rho);
+            print_rho = false;
+        }
+        */
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+
+    }
+
+		document.getElementById("Slider01").oninput = function() {
+			dist = Number(this.value) * 0.01;
+			document.getElementById("SliderValue01").innerHTML = dist.toFixed(2).toString();
+		}
+
+		animate();
+	</script>
+</body>
+
+</html>
