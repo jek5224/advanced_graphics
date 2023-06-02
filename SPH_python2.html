@@ -38,20 +38,15 @@
 	<button class="button" onclick="run()">Run/Pause</button>
 	<button class="button" onclick="reset()">Restart</button>
 	
-	h<input type = "range" min = "0" max = "4000" value = "0" id = "Slider01" class = "slider"> <span id = "SliderValue01">0.0</span>
-    x<input type = "range" min = "0" max = "5500" value = "0" id = "Slider02" class = "slider"> <span id = "SliderValue02">0.0</span>
-
-    k<input type = "range" min = "1" max = "10000000" value = "20000" id = "Slider03" class = "slider"> <span id = "SliderValue03">2000.0</span>
-    rho_0<input type = "range" min = "1" max = "1000000" value = "3000" id = "Slider04" class = "slider"> <span id = "SliderValue04">300.0</span>
-    nu<input type = "range" min = "1" max = "1000000" value = "2000" id = "Slider05" class = "slider"> <span id = "SliderValue05">200.0</span>
-    time step<input type = "range" min = "1" max = "100" value = "7" id = "Slider06" class = "slider"> <span id = "SliderValue06">0.0007</span>
+	h<input type = "range" min = "0" max = "400" value = "100" id = "Slider01" class = "slider"> <span id = "SliderValue01">100</span>
+    x<input type = "range" min = "100" max = "550" value = "2000" id = "Slider02" class = "slider"> <span id = "SliderValue02">200</span>
+    <input type="checkbox" id="isFriction" name="isFriction" onclick="useisFriction(event)">Friction
+    <input type="checkbox" id="isViscosity" name="isViscosity" onclick="useisViscosity(event)" checked>Viscosity
 
 	<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
 
 	<script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
-	<script>
-	</script>
+    <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
 	<script>
 		
     var scene = new THREE.Scene();
@@ -82,7 +77,7 @@
         scene.paused = !scene.paused;
     }
     
-    scene.paused = true;
+    scene.paused = false;
 
     // Light Setting 
     // scene.add(new THREE.AmbientLight( 0xaaaaaa ));
@@ -127,9 +122,6 @@
     scene.add(wall);
 
     // *************************************Define environments*****************************************
-
-
-
 
 
     // ***************************************Define Particles******************************************
@@ -186,12 +178,12 @@
     const rho_water = 0.000997;     // kg / cm^3
     
     var G = new THREE.Vector3(0.0, 0.0, 1000.0);   // cm / s^2
-    //const VOLUME = 2.0 * Math.PI * r * r;
     const VOLUME = 4.0 / 3.0 * Math.PI * r * r * r; // cm^3
     const MASS = VOLUME * rho_water;    // kg
-    console.log(MASS);
-    var REST_DENS = 4000.0;  // rest density
-    var GAS_CONST = 150000.0; // const for equation of state
+    //var REST_DENS = 4000.0;  // rest density with viscosity
+    var REST_DENS = 18000
+    // var GAS_CONST = 150000.0; // k with viscosity
+    var GAS_CONST = 25000
     var VISC = 3000.0;	   // viscosity constant
     var DT = 0.000007;	   // integration timestep
     
@@ -214,6 +206,11 @@
 
     var print_rho = true;
     var hit = false;
+
+    var isFriction = false;
+    const friction = 0.995;
+
+    var isViscosity = true;
 
     for (let i = 0; i < water_y / 2 / r; i++) {
       for (let j = 0; j < water_x / 2 / r; j++) {
@@ -265,114 +262,125 @@
 
     
     function animate() {
-        for (let i = 0; i < particles.length; i++) {
-            p_i = particles[i];
-            p_i.rho = 0.0;
-
-            // Density
-            for (let j = 0; j < particles.length; j++) {
-                p_j = particles[j];
-                var d = p_i.position.distanceTo(p_j.position);
-
-                if (d < H) {
-                    p_i.rho += MASS * POLY6 * Math.pow((H_square - d * d), 3);
-                }
-            }
-            p_i.p = GAS_CONST * (p_i.rho - REST_DENS);
-            //p_i.p = Math.max(GAS_CONST * (p_i.rho - REST_DENS), 0);
+        if (hit) {
+            hit = false;
+            h += 1;
+            document.getElementById("SliderValue01").innerHTML = h.toString();
+            reset();
         }
+        if (scene.paused == false) {
+            for (let i = 0; i < particles.length; i++) {
+                p_i = particles[i];
+                p_i.rho = 0.0;
 
-        for (let i = 0; i < particles.length; i++) {
-            p_i = particles[i];
-            // Pressure Force
-            var fpress = new THREE.Vector3(0,0,0); // Force
-            var fvisc = new THREE.Vector3(0, 0, 0);
+                // Density
+                for (let j = 0; j < particles.length; j++) {
+                    p_j = particles[j];
+                    var d = p_i.position.distanceTo(p_j.position);
 
-            for (let j = 0; j < particles.length; j++) {
-                if (i == j) continue;
-
-                p_j = particles[j];
-                var dir = p_j.position.clone().sub(p_i.position);
-                var d = dir.length();
-                dir.normalize();
-
-                if (d < H) {
-                    fpress.add(dir.multiplyScalar(-MASS * (p_i.p + p_j.p) / (2.0 * p_j.rho) * SPIKY_GRAD * Math.pow(H - d, 3.0)));
-                    fvisc.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(VISC * MASS * VISC_LAP * (H - d) / p_j.rho));
+                    if (d <= H) {
+                        p_i.rho += MASS * POLY6 * Math.pow((H_square - d * d), 3);
+                    }
                 }
-            }   
-
-            // Gravity force
-            //f.add(new THREE.Vector3(0.0, 0.0, g * p_i.rho));
-            
-            //var fgrav = G.clone().multiplyScalar(MASS);
-
-            //p_i.f = fpress.add(fvisc).add(fgrav);
-            p_i.f = fpress.add(fvisc);
-        }
-
-        for (let i = 0; i < particles.length; i++) {
-            p_i = particles[i];
-
-            p_i.velocity.add(p_i.f.clone().multiplyScalar(DT / p_i.rho));
-            p_i.velocity.add(G);
-            p_i.position.add(p_i.velocity.clone().multiplyScalar(DT));
-
-            if (p_i.position.x - EPS / 2.0 < -boundary_x / 2.0) {
-                p_i.velocity.x *= BOUND_DAMPING;
-                //p_i.velocity.z *= -BOUND_DAMPING;
-                p_i.position.x = EPS / 2.0 - boundary_x / 2.0;
-            }
-            if (p_i.position.x + EPS / 2.0 > boundary_x / 2.0) {
-                p_i.velocity.x *= BOUND_DAMPING;
-                //p_i.velocity.z *= -BOUND_DAMPING;
-                p_i.position.x = boundary_x / 2.0 - EPS / 2.0;
-            }
-            if (p_i.position.z - EPS / 2.0 < -boundary_y / 2.0) {
-                p_i.velocity.z *= BOUND_DAMPING;
-                //p_i.velocity.x *= -BOUND_DAMPING;
-                p_i.position.z = EPS / 2.0 - boundary_y / 2.0;
-            }
-            if (p_i.position.z + EPS / 2.0 > boundary_y / 2.0) {
-                p_i.velocity.z *= BOUND_DAMPING;
-                //p_i.velocity.x *= -BOUND_DAMPING;
-                p_i.position.z = boundary_y / 2.0 - EPS / 2.0;
+                p_i.p = GAS_CONST * (p_i.rho - REST_DENS);
+                //p_i.p = Math.max(GAS_CONST * (p_i.rho - REST_DENS), 0);
             }
 
-            if (p_i.position.z > boundary_y / 2.0 - h - EPS / 2.0 && p_i.position.z < boundary_y - EPS / 2.0) {
-              if (p_i.position.x > -boundary_x / 2.0 + x - EPS / 2.0 && p_i.position.x < -boundary_x / 2.0 + x + wall_x + EPS / 2.0) {
-                var d1 = p_i.position.x + boundary_x / 2.0 - x + EPS / 2.0;
-                var d2 = -boundary_x / 2.0 + x + wall_x + EPS - p_i.position.x;
-                var d3 = p_i.position.z - boundary_y / 2.0 + h + EPS / 2.0;
+            for (let i = 0; i < particles.length; i++) {
+                p_i = particles[i];
+                // Pressure Force
+                var fpress = new THREE.Vector3(0,0,0); // Force
+                var fvisc = new THREE.Vector3(0, 0, 0);
 
-                if (d1 < d2 && d1 < d3) {
-                  p_i.velocity.x *= BOUND_DAMPING;
-                  //p_i.velocity.z *= -BOUND_DAMPING;
-                  p_i.position.x = -boundary_x / 2.0 + x - EPS / 2.0;
+                for (let j = 0; j < particles.length; j++) {
+                    if (i == j) continue;
+
+                    p_j = particles[j];
+                    var dir = p_j.position.clone().sub(p_i.position);
+                    var d = dir.length();
+                    dir.normalize();
+
+                    if (d <= H) {
+                        fpress.add(dir.multiplyScalar(-MASS * (p_i.p + p_j.p) / (2.0 * p_j.rho) * SPIKY_GRAD * Math.pow(H - d, 3.0)));
+                        fvisc.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(VISC * MASS * VISC_LAP * (H - d) / p_j.rho));
+                    }
+                }   
+
+                // Gravity force
+                //f.add(new THREE.Vector3(0.0, 0.0, g * p_i.rho));
+                
+                //var fgrav = G.clone().multiplyScalar(MASS);
+
+                //p_i.f = fpress.add(fvisc).add(fgrav);
+                if (isViscosity)
+                    p_i.f = fpress.add(fvisc);
+                else
+                    p_i.f = fpress;
+            }
+
+            for (let i = 0; i < particles.length; i++) {
+                p_i = particles[i];
+
+                p_i.velocity.add(p_i.f.clone().multiplyScalar(DT / p_i.rho));
+                p_i.velocity.add(G);
+                p_i.position.add(p_i.velocity.clone().multiplyScalar(DT));
+
+                if (p_i.position.x - EPS / 2.0 < -boundary_x / 2.0) {
+                    p_i.velocity.x *= BOUND_DAMPING;
+                    if (isFriction) p_i.velocity.z *= friction;
+                    p_i.position.x = EPS / 2.0 - boundary_x / 2.0;
                 }
-                else if (d2 < d1 && d2 < d3) {
-                  p_i.velocity.x *= BOUND_DAMPING;
-                  //p_i.velocity.z *= -BOUND_DAMPING;
-                  p_i.position.x = -boundary_x / 2.0 + x + wall_x + EPS / 2.0;
+                if (p_i.position.x + EPS / 2.0 > boundary_x / 2.0) {
+                    p_i.velocity.x *= BOUND_DAMPING;
+                    if (isFriction) p_i.velocity.z *= friction;
+                    p_i.position.x = boundary_x / 2.0 - EPS / 2.0;
                 }
-                else {
-                  p_i.velocity.z *= BOUND_DAMPING;
-                  //p_i.velocity.x *= -BOUND_DAMPING;
-                  p_i.position.z = boundary_y / 2.0 - h - EPS / 2.0;
+                if (p_i.position.z - EPS / 2.0 < -boundary_y / 2.0) {
+                    p_i.velocity.z *= BOUND_DAMPING;
+                    if (isFriction) p_i.velocity.x *= friction;
+                    p_i.position.z = EPS / 2.0 - boundary_y / 2.0;
                 }
-              }
+                if (p_i.position.z + EPS / 2.0 > boundary_y / 2.0) {
+                    p_i.velocity.z *= BOUND_DAMPING;
+                    if (isFriction) p_i.velocity.x *= friction;
+                    p_i.position.z = boundary_y / 2.0 - EPS / 2.0;
+                }
 
-            }
+                if (p_i.position.z > boundary_y / 2.0 - h - EPS / 2.0 && p_i.position.z < boundary_y - EPS / 2.0) {
+                  if (p_i.position.x > -boundary_x / 2.0 + x - EPS / 2.0 && p_i.position.x < -boundary_x / 2.0 + x + wall_x + EPS / 2.0) {
+                    var d1 = p_i.position.x + boundary_x / 2.0 - x + EPS / 2.0;
+                    var d2 = -boundary_x / 2.0 + x + wall_x + EPS - p_i.position.x;
+                    var d3 = p_i.position.z - boundary_y / 2.0 + h + EPS / 2.0;
 
-            if (!hit) {
-                if (p_i.position.x > boundary_x / 2.0 - home_x - EPS / 2.0 && p_i.position.z > boundary_y / 2.0 - home_y - EPS / 2.0) {
-                    home_edge.material.color.set(0xFF0000);
-                    home.material.color.set(0xFF5555);
-                    hit = true;
-                    console.log("Hit");
+                    if (d1 < d2 && d1 < d3) {
+                      p_i.velocity.x *= BOUND_DAMPING;
+                      if (isFriction) p_i.velocity.z *= friction;
+                      p_i.position.x = -boundary_x / 2.0 + x - EPS / 2.0;
+                    }
+                    else if (d2 < d1 && d2 < d3) {
+                      p_i.velocity.x *= BOUND_DAMPING;
+                      if (isFriction) p_i.velocity.z *= friction;
+                      p_i.position.x = -boundary_x / 2.0 + x + wall_x + EPS / 2.0;
+                    }
+                    else {
+                      p_i.velocity.z *= BOUND_DAMPING;
+                      if (isFriction) p_i.velocity.x *= friction;
+                      p_i.position.z = boundary_y / 2.0 - h - EPS / 2.0;
+                    }
+                  }
+
                 }
+
+                if (!hit) {
+                    if (p_i.position.x > boundary_x / 2.0 - home_x - EPS / 2.0 && p_i.position.z > boundary_y / 2.0 - home_y - EPS / 2.0) {
+                        home_edge.material.color.set(0xFF0000);
+                        home.material.color.set(0xFF5555);
+                        hit = true;
+                        console.log("Hit");
+                    }
+                }
+                p_i.render();
             }
-            p_i.render();
         }
         /*
         if (print_rho) {
@@ -388,8 +396,8 @@
     }
 
 	document.getElementById("Slider01").oninput = function() {
-		dist = Number(this.value) * 0.1;
-		document.getElementById("SliderValue01").innerHTML = dist.toFixed(1).toString();
+		dist = Number(this.value);
+		document.getElementById("SliderValue01").innerHTML = dist.toString();
         h = dist;
 
         scene.remove(scene.getObjectByName("wall_edge"));
@@ -411,8 +419,8 @@
 	}
 
     document.getElementById("Slider02").oninput = function() {
-        dist = Number(this.value) * 0.1;
-        document.getElementById("SliderValue02").innerHTML = dist.toFixed(1).toString();
+        dist = Number(this.value);
+        document.getElementById("SliderValue02").innerHTML = dist.toString();
         x = dist;
         if (x < EPS) x = EPS;
         else if (x > boundary_x - wall_x - EPS) x = boundary_x - wall_x - EPS;
@@ -434,28 +442,14 @@
         scene.add(wall);
     }
 
-    document.getElementById("Slider03").oninput = function() {
-        dist = Number(this.value) * 0.1;
-        document.getElementById("SliderValue03").innerHTML = dist.toFixed(1).toString();
-        GAS_CONST = dist;
+    function useisFriction() {
+        if (document.getElementById("isFriction").checked == true) isFriction = true;
+        else isFriction = false;
     }
 
-    document.getElementById("Slider04").oninput = function() {
-        dist = Number(this.value) * 0.1;
-        document.getElementById("SliderValue04").innerHTML = dist.toFixed(1).toString();
-        REST_DENS = dist;
-    }
-
-    document.getElementById("Slider05").oninput = function() {
-        dist = Number(this.value) * 0.1;
-        document.getElementById("SliderValue05").innerHTML = dist.toFixed(1).toString();
-        VISC = dist;
-    }
-
-    document.getElementById("Slider06").oninput = function() {
-        dist = Number(this.value) * 0.0001;
-        document.getElementById("SliderValue06").innerHTML = dist.toFixed(4).toString();
-        DT = dist;
+    function useisViscosity() {
+        if (document.getElementById("isViscosity").checked == true) isViscosity = true;
+        else isViscosity = false;
     }
 
 	animate();

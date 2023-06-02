@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>SPH Simulation</title>
+	<style>
+		body {
+			margin: 0;
+		}
+
+		.button{
+				background-color: #606060;
+				border: none;
+				color: white;
+				padding: 10px 32px;
+				font-size: 16px;
+				margin: 4px 2px;
+				cursor: pointer;
+		}
+		.slider{
+				-webkit-appearance: none;
+				width: 80px;
+				height: 6px;
+				border-radius: 5px;
+				background: #d3d3d3;
+				outline: none;
+				opacity: 0.7;
+				-webkit-transition: .2s;
+				transition: opacity .2s;
+		}
+
+	</style>
+</head>
+
+<body>
+
+	<button class="button" onclick="run()">Run/Pause</button>
+	<button class="button" onclick="reset()">Restart</button>
+	
+	h<input type = "range" min = "0" max = "400" value = "100" id = "Slider01" class = "slider"> <span id = "SliderValue01">100</span>
+    x<input type = "range" min = "100" max = "550" value = "2000" id = "Slider02" class = "slider"> <span id = "SliderValue02">200</span>
+    <input type="checkbox" id="isFriction" name="isFriction" onclick="useisFriction(event)">Friction
+    <input type="checkbox" id="isViscosity" name="isViscosity" onclick="useisViscosity(event)" checked>Viscosity
+
+	<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+	<script src="https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+	<script>
+		
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
+    camera.position.set(0, 0, 700);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    // Disable Rotations, Zoom in/out only
+    controls.listenToKeyEvents(window); // optional
+
+    window.onresize = function() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    function run() {
+        scene.paused = !scene.paused;
+    }
+    
+    scene.paused = true;
+
+    // Light Setting 
+    // scene.add(new THREE.AmbientLight( 0xaaaaaa ));
+
+    // *************************************Define environments*****************************************
+    const boundary_x = 600.0;
+    const boundary_y = 400.0;
+    const boundary_z = 200.0;
+    
+    var boundary = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(boundary_x , boundary_y, boundary_z, 1, 1, 1)), new THREE.LineBasicMaterial({ color: 0X0000000 }));
+    //boundary.rotation.x = -Math.PI * 0.5;
+    scene.add(boundary);
+
+    const home_x = 50;
+    const home_y = 50;
+    const home_z = home_y;
+
+    var home = new THREE.Mesh(new THREE.BoxGeometry(home_x, home_y, home_z, 1,1,1), new THREE.MeshPhongMaterial({ color: 0Xe2f0d9, flatShading : false } ));
+    //home.rotation.x = -Math.PI * 0.5;
+    home.position.set(boundary_x / 2.0 - home_x / 2.0, -boundary_y / 2.0 + home_y / 2.0, 0);
+    home.name = "home";
+    scene.add(home);
+
+    const wall_x = 50;
+    var h = 100;
+    var x = 200;
+    const wall_z = boundary_z;
+
+    var wall = new THREE.Mesh(new THREE.BoxGeometry(wall_x,h,wall_z,1,1,1), new THREE.MeshPhongMaterial({ color: 0X7f7f7f, flatShading : false } ));
+    //wall.rotation.x = -Math.PI * 0.5;
+    wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+    wall.name = "wall";
+    scene.add(wall);
+
+    scene.add(new THREE.AmbientLight( 0x111111 ));
+    var dirLight1 = new THREE.DirectionalLight(0xbbbbbb);
+    dirLight1.position.set(-10000,10000,0);
+    dirLight1.castShadow = true;
+    scene.add(dirLight1);
+
+    var dirLight2 = new THREE.DirectionalLight(0xaaaaaa);
+    dirLight2.position.set(0,10000,10000);
+    dirLight2.castShadow = true;
+    scene.add(dirLight2);
+    // *************************************Define environments*****************************************
+
+
+    // ***************************************Define Particles******************************************
+    
+
+    var particles = []
+
+    class Particle {
+      constructor(_scene, r, pos) {
+        this.r = r;
+        this.volume = 4.0 / 3.0 * Math.PI * r * r * r;
+        this.rho = rho_water;
+        this.mass = this.volume * this.rho;
+        //this.mass = 2.5;
+        this.p = 0;
+        this.position = pos;
+        this.velocity = new THREE.Vector3(0,0,0);
+        this.f = new THREE.Vector3(0,0,0);
+
+        this.geometry = new THREE.SphereGeometry(r, 8, 8);
+        this.material = new THREE.MeshPhongMaterial({ color : 0X05b0f0 });
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+        //this.mesh.rotation.x = -Math.PI * 0.5;
+        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+        this.mesh.name = "Particle";
+
+        _scene.add(this.mesh);
+      }
+
+      print() {
+        console.log("radius: " + this.r + " m" +
+          "\nvolume: " + this.volume + " m^3" +
+          "\nmass: " + this.mass + " kg" +
+          "\ndensity: " + this.rho + " kg/m^3" +
+          "\npressure: " + this.p + " kg /m s^2" +
+          "\nposition: " + this.position.x + ", " + this.position.y + ", " + this.position.z +
+          "\nvelocity: " + this.velocity.x + ", " + this.velocity.y + ", " + this.velocity.z);
+      }
+
+      render() {
+        this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      }
+    }
+
+    const water_x = 100;    // cm
+    const water_y = 300;    // cm
+    const water_z = boundary_z;
+    const num_particles = 300;
+    //const r = Math.sqrt(water_x * water_y / num_particles) / 2.0;   // cm
+    const r = 5;
+    
+    const H = r * 2;    // cm
+    const H_square = H * H;     // cm^2
+
+    
+    const rho_water = 0.000997;     // kg / cm^3
+    
+    var G = new THREE.Vector3(0.0, -1000.0, 0.0);   // cm / s^2
+    const VOLUME = 4.0 / 3.0 * Math.PI * r * r * r; // cm^3
+    const MASS = VOLUME * rho_water;    // kg
+    var REST_DENS = 4000.0;  // rest density
+    var GAS_CONST = 150000.0; // const for equation of state
+    var VISC = 3000.0;	   // viscosity constant
+    var DT = 0.000007;	   // integration timestep
+    
+    /*
+    //variables in example
+    var G = new THREE.Vector3(0.0, 0.0, 10.0);   // cm / s^2
+    const MASS = 2.5; 
+    var REST_DENS = 300.0;  // rest density
+    var GAS_CONST = 2000.0; // const for equation of state
+    var VISC = 200.0;      // viscosity constant
+    var DT = 0.0007;
+    */
+
+    const POLY6 = 4.0 / (Math.PI * Math.pow(H, 8.0));
+    const SPIKY_GRAD = -10.0 / (Math.PI * Math.pow(H, 5.0));
+    const VISC_LAP = 40.0 / (Math.PI * Math.pow(H, 5.0));
+
+    const EPS = H;
+    const BOUND_DAMPING = -0.5;
+
+    var print_rho = true;
+    var hit = false;
+
+    var isFriction = false;
+    const friction = 0.995;
+
+    var isViscosity = true;
+
+    
+    for (let i = 0; i < water_y / 2 / r; i++) {
+      for (let j = 0; j < water_x / 2 / r; j++) {
+        for (let k = 0; k < water_z / 2 / r; k++) {
+            particles.push(new Particle(scene, r, new THREE.Vector3(-boundary_x / 2.0 + j * 2 * r + r + Math.random(), boundary_y / 2.0 - (boundary_y - water_y) - i * 2 * r - r, -boundary_z / 2.0 + k * 2 * r + r)));
+        }
+      }
+    }
+    
+
+    /*
+    for (let i = 0; i < water_y / 2 / r; i++) {
+      for (let j = 0; j < water_x / 2 / r; j++) {
+        particles.push(new Particle(scene, r, new THREE.Vector3(-boundary_x / 2.0 + j * 2 * r + r + Math.random(), boundary_y / 2.0 - (boundary_y - water_y) - i * 2 * r - r, Math.random())));
+      }
+    }
+    */
+    
+
+    console.log(particles.length);
+
+    // ***************************************Define Particles******************************************
+
+    function run() {
+      scene.paused = !scene.paused;
+    }
+
+    function reset() {
+        for (let i = 0; i < particles.length; i++) {
+            scene.remove(scene.getObjectByName("Particle"));
+        }
+        particles = [];
+
+
+        for (let i = 0; i < water_y / 2 / r; i++) {
+          for (let j = 0; j < water_x / 2 / r; j++) {
+            for (let k = 0; k < water_z / 2 / r; k++) {
+                particles.push(new Particle(scene, r, new THREE.Vector3(-boundary_x / 2.0 + j * 2 * r + r + Math.random(), boundary_y / 2.0 - (boundary_y - water_y) - i * 2 * r - r, -boundary_z / 2.0 + k * 2 * r + r)));
+            }
+          }
+        }
+
+        scene.remove(scene.getObjectByName("wall_edge"));
+        scene.remove(scene.getObjectByName("wall"));
+        renderer.render(scene, camera);
+
+        var wall_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(wall_x , h, wall_z, 1, 1, 1)), new THREE.LineBasicMaterial({ color: 0X315492, flatShading : false }));
+        //wall_edge.rotation.x = -Math.PI * 0.5;
+        wall_edge.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+        wall_edge.name = "wall_edge";
+        scene.add(wall_edge);
+
+        var wall = new THREE.Mesh(new THREE.BoxGeometry(wall_x,h,wall_z,1,1,1), new THREE.MeshPhongMaterial({ color: 0X7f7f7f, flatShading : false } ));
+        //wall.rotation.x = -Math.PI * 0.5;
+        wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+        wall.name = "wall";
+        scene.add(wall);
+
+        home_edge.material.color.set(0X76af4d);
+        home.material.color.set(0Xe2f0d9);
+        hit = false;
+    }
+
+    
+    function animate() {
+        if (hit) {
+            x += 1;
+            document.getElementById("SliderValue02").innerHTML = x.toString();
+            reset();
+        }
+        for (let i = 0; i < particles.length; i++) {
+            p_i = particles[i];
+            p_i.rho = 0.0;
+
+            // Density
+            for (let j = 0; j < particles.length; j++) {
+                p_j = particles[j];
+                var d = p_i.position.distanceTo(p_j.position);
+
+                if (d < H) {
+                    p_i.rho += MASS * POLY6 * Math.pow((H_square - d * d), 3);
+                }
+            }
+            p_i.p = GAS_CONST * (p_i.rho - REST_DENS);
+            //p_i.p = Math.max(GAS_CONST * (p_i.rho - REST_DENS), 0);
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+            p_i = particles[i];
+            // Pressure Force
+            var fpress = new THREE.Vector3(0,0,0); // Force
+            var fvisc = new THREE.Vector3(0, 0, 0);
+
+            for (let j = 0; j < particles.length; j++) {
+                if (i == j) continue;
+
+                p_j = particles[j];
+                var dir = p_j.position.clone().sub(p_i.position);
+                var d = dir.length();
+                dir.normalize();
+
+                if (d < H) {
+                    fpress.add(dir.multiplyScalar(-MASS * (p_i.p + p_j.p) / (2.0 * p_j.rho) * SPIKY_GRAD * Math.pow(H - d, 3.0)));
+                    fvisc.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(VISC * MASS * VISC_LAP * (H - d) / p_j.rho));
+                }
+            }   
+
+            //p_i.f = fpress.add(fvisc).add(fgrav);
+            if (isViscosity)
+                p_i.f = fpress.add(fvisc);
+            else
+                p_i.f = fpress;
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+            p_i = particles[i];
+
+            p_i.velocity.add(p_i.f.clone().multiplyScalar(DT / p_i.rho));
+            p_i.velocity.add(G);
+            p_i.position.add(p_i.velocity.clone().multiplyScalar(DT));
+
+            if (p_i.position.x - EPS / 2.0 < -boundary_x / 2.0) {
+                p_i.velocity.x *= BOUND_DAMPING;
+                if (isFriction) {
+                    p_i.velocity.y *= friction;
+                    p_i.velocity.z *= friction;
+                }
+                p_i.position.x = EPS / 2.0 - boundary_x / 2.0;
+            }
+            if (p_i.position.x + EPS / 2.0 > boundary_x / 2.0) {
+                p_i.velocity.x *= BOUND_DAMPING;
+                if (isFriction) {
+                    p_i.velocity.y *= friction;
+                    p_i.velocity.z *= friction;
+                }
+                p_i.position.x = boundary_x / 2.0 - EPS / 2.0;
+            }
+
+            if (p_i.position.y - EPS / 2.0 < -boundary_y / 2.0) {
+                p_i.velocity.y *= BOUND_DAMPING;
+                if (isFriction) {
+                    p_i.velocity.x *= friction;
+                    p_i.velocity.z *= friction;
+                }
+                p_i.position.y = EPS / 2.0 - boundary_y / 2.0;
+            }
+            if (p_i.position.y + EPS / 2.0 > boundary_y / 2.0) {
+                p_i.velocity.y *= BOUND_DAMPING;
+                if (isFriction) {
+                    p_i.velocity.x *= friction;
+                    p_i.velocity.z *= friction;
+                }
+                p_i.position.y = boundary_y / 2.0 - EPS / 2.0;
+            }
+
+            if (p_i.position.z - EPS / 2.0 < -boundary_z / 2.0) {
+                p_i.velocity.z *= BOUND_DAMPING;
+                if (isFriction) {
+                    p_i.velocity.x *= friction;
+                    p_i.velocity.y *= friction;
+                }
+                p_i.position.z = EPS / 2.0 - boundary_z / 2.0;
+            }
+            if (p_i.position.z + EPS / 2.0 > boundary_z / 2.0) {
+                p_i.velocity.z *= BOUND_DAMPING;
+                if (isFriction) {
+                    p_i.velocity.x *= friction;
+                    p_i.velocity.y *= friction;
+                }
+                p_i.position.z = boundary_z / 2.0 - EPS / 2.0;
+            }
+
+            if (p_i.position.y < -boundary_y / 2.0 + h + EPS / 2.0 && p_i.position.y > -boundary_y + EPS / 2.0) {
+              if (p_i.position.x > -boundary_x / 2.0 + x - EPS / 2.0 && p_i.position.x < -boundary_x / 2.0 + x + wall_x + EPS / 2.0) {
+                var d1 = p_i.position.x + boundary_x / 2.0 - x + EPS / 2.0;
+                var d2 = -boundary_x / 2.0 + x + wall_x + EPS - p_i.position.x;
+                var d3 = -p_i.position.y - boundary_y / 2.0 + h + EPS / 2.0;
+
+                if (d1 < d2 && d1 < d3) {
+                    p_i.velocity.x *= BOUND_DAMPING;
+                    if (isFriction) {
+                        p_i.velocity.y *= friction;
+                        p_i.velocity.z *= friction;
+                    }
+                    p_i.position.x = -boundary_x / 2.0 + x - EPS / 2.0;
+                }
+                else if (d2 < d1 && d2 < d3) {
+                    p_i.velocity.x *= BOUND_DAMPING;
+                    if (isFriction) {
+                        p_i.velocity.y *= friction;
+                        p_i.velocity.z *= friction;
+                    }
+                    p_i.position.x = -boundary_x / 2.0 + x + wall_x + EPS / 2.0;
+                }
+                else {
+                    p_i.velocity.y *= BOUND_DAMPING;
+                    if (isFriction) {
+                        p_i.velocity.x *= friction;
+                        p_i.velocity.z *= friction;
+                    }
+                    p_i.position.y = -boundary_y / 2.0 + h + EPS / 2.0;
+                }
+              }
+
+            }
+
+            if (!hit) {
+                if (p_i.position.x > boundary_x / 2.0 - home_x - EPS / 2.0 && p_i.position.y < -boundary_y / 2.0 + home_y + EPS / 2.0 && p_i.position.z > -home_z / 2.0 - EPS / 2.0 && p_i.position.z < home_z / 2.0 + EPS / 2.0) {
+                    home_edge.material.color.set(0xFF0000);
+                    home.material.color.set(0xFF5555);
+                    hit = true;
+                    console.log("Hit");
+                }
+            }
+            p_i.render();
+        }
+        /*
+        if (print_rho) {
+            for (let i = 0; i < particles.length; i++)
+            console.log(particles[i].rho);
+            print_rho = false;
+        }
+        */
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+
+    }
+
+	document.getElementById("Slider01").oninput = function() {
+		dist = Number(this.value);
+		document.getElementById("SliderValue01").innerHTML = dist.toString();
+        h = dist;
+
+        scene.remove(scene.getObjectByName("wall_edge"));
+        scene.remove(scene.getObjectByName("wall"));
+        renderer.render(scene, camera);
+
+        var wall_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(wall_x , h, wall_z, 1, 1, 1)), new THREE.LineBasicMaterial({ color: 0X315492 }));
+        //wall_edge.rotation.x = -Math.PI * 0.5;
+        wall_edge.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+        wall_edge.name = "wall_edge";
+        scene.add(wall_edge);
+
+        var wall = new THREE.Mesh(new THREE.BoxGeometry(wall_x,h,wall_z,1,1,1), new THREE.MeshPhongMaterial({ color: 0X7f7f7f, flatShading : false } ));
+        //wall.rotation.x = -Math.PI * 0.5;
+        wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+        wall.name = "wall";
+        scene.add(wall);
+
+	}
+
+    document.getElementById("Slider02").oninput = function() {
+        dist = Number(this.value);
+        document.getElementById("SliderValue02").innerHTML = dist.toString();
+        x = dist;
+        if (x < EPS) x = EPS;
+        else if (x > boundary_x - wall_x - EPS) x = boundary_x - wall_x - EPS;
+        
+        scene.remove(scene.getObjectByName("wall_edge"));
+        scene.remove(scene.getObjectByName("wall"));
+        renderer.render(scene, camera);
+
+        var wall_edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(wall_x , h, wall_z, 1, 1, 1)), new THREE.LineBasicMaterial({ color: 0X315492 }));
+        //wall_edge.rotation.x = -Math.PI * 0.5;
+        wall_edge.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+        wall_edge.name = "wall_edge";
+        scene.add(wall_edge);
+
+        var wall = new THREE.Mesh(new THREE.BoxGeometry(wall_x,h,wall_z,1,1,1), new THREE.MeshPhongMaterial({ color: 0X7f7f7f, flatShading : false } ));
+        //wall.rotation.x = -Math.PI * 0.5;
+        wall.position.set(-boundary_x / 2.0 + x + wall_x / 2.0, -boundary_y / 2.0 + h / 2.0, 0.0);
+        wall.name = "wall";
+        scene.add(wall);
+    }
+
+    function useisFriction() {
+        if (document.getElementById("isFriction").checked == true) isFriction = true;
+        else isFriction = false;
+    }
+
+    function useisViscosity() {
+        if (document.getElementById("isViscosity").checked == true) isViscosity = true;
+        else isViscosity = false;
+    }
+
+	animate();
+	</script>
+</body>
+
+</html>
