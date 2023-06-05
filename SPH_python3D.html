@@ -274,11 +274,6 @@
 
     
     function animate() {
-        if (hit) {
-            x += 1;
-            document.getElementById("SliderValue02").innerHTML = x.toString();
-            reset();
-        }
         for (let i = 0; i < particles.length; i++) {
             p_i = particles[i];
             p_i.rho = 0.0;

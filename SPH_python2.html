@@ -132,9 +132,9 @@
     class Particle {
       constructor(_scene, r, pos) {
         this.r = r;
-        this.volume = 4.0 / 3.0 * Math.PI * r * r * r;
+        this.v = 4.0 / 3.0 * Math.PI * r * r * r;
         this.rho = rho_water;
-        this.mass = this.volume * this.rho;
+        this.mass = this.v * this.rho;
         //this.mass = 2.5;
         this.p = 0;
         this.position = pos;
@@ -153,7 +153,7 @@
 
       print() {
         console.log("radius: " + this.r + " m" +
-          "\nvolume: " + this.volume + " m^3" +
+          "\nv: " + this.v + " m^3" +
           "\nmass: " + this.mass + " kg" +
           "\ndensity: " + this.rho + " kg/m^3" +
           "\npressure: " + this.p + " kg /m s^2" +
@@ -170,6 +170,7 @@
     const water_y = 300;    // cm
     const num_particles = 300;
     const r = Math.sqrt(water_x * water_y / num_particles) / 2.0;   // cm
+    //const r = 5;
     
     const H = r * 2;    // cm
     const H_square = H * H;     // cm^2
@@ -178,31 +179,32 @@
     const rho_water = 0.000997;     // kg / cm^3
     
     var G = new THREE.Vector3(0.0, 0.0, 1000.0);   // cm / s^2
-    const VOLUME = 4.0 / 3.0 * Math.PI * r * r * r; // cm^3
-    const MASS = VOLUME * rho_water;    // kg
-    //var REST_DENS = 4000.0;  // rest density with viscosity
-    var REST_DENS = 18000
-    // var GAS_CONST = 150000.0; // k with viscosity
-    var GAS_CONST = 25000
-    var VISC = 3000.0;	   // viscosity constant
-    var DT = 0.000007;	   // integration timestep
+    const v = 4.0 / 3.0 * Math.PI * r * r * r; // cm^3
+    const m = v * rho_water;    // kg
+    //var rho_0 = 4000.0;  // rest density with viscosity
+    var rho_0 = 18000
+    // var k = 150000.0; // k with viscosity
+    var k = 25000
+    var nu = 3000.0;	   // viscosity constant
+    //var del_t = 0.000007;	   // integration timestep
+    var del_t = 0.000005;
     
     /*
     //variables in example
     var G = new THREE.Vector3(0.0, 0.0, 10.0);   // cm / s^2
-    const MASS = 2.5; 
-    var REST_DENS = 300.0;  // rest density
-    var GAS_CONST = 2000.0; // const for equation of state
-    var VISC = 200.0;      // viscosity constant
-    var DT = 0.0007;
+    const m = 2.5; 
+    var rho_0 = 300.0;  // rest density
+    var k = 2000.0; // const for equation of state
+    var nu = 200.0;      // viscosity constant
+    var del_t = 0.0007;
     */
 
-    const POLY6 = 4.0 / (Math.PI * Math.pow(H, 8.0));
-    const SPIKY_GRAD = -10.0 / (Math.PI * Math.pow(H, 5.0));
-    const VISC_LAP = 40.0 / (Math.PI * Math.pow(H, 5.0));
+    const W_const = 4.0 / (Math.PI * Math.pow(H, 8.0));
+    const grad_W_const = -10.0 / (Math.PI * Math.pow(H, 5.0));
+    const lapl_W_const = 40.0 / (Math.PI * Math.pow(H, 5.0));
 
-    const EPS = H;
-    const BOUND_DAMPING = -0.5;
+    const diam = H;
+    const damp = -0.5;
 
     var print_rho = true;
     var hit = false;
@@ -262,12 +264,15 @@
 
     
     function animate() {
+        /*
+        // For finding minimum h or x
         if (hit) {
             hit = false;
             h += 1;
-            document.getElementById("SliderValue01").innerHTML = h.toString();
+          
             reset();
         }
+        */
         if (scene.paused == false) {
             for (let i = 0; i < particles.length; i++) {
                 p_i = particles[i];
@@ -279,11 +284,11 @@
                     var d = p_i.position.distanceTo(p_j.position);
 
                     if (d <= H) {
-                        p_i.rho += MASS * POLY6 * Math.pow((H_square - d * d), 3);
+                        p_i.rho += m * W_const * Math.pow((H_square - d * d), 3);
                     }
                 }
-                p_i.p = GAS_CONST * (p_i.rho - REST_DENS);
-                //p_i.p = Math.max(GAS_CONST * (p_i.rho - REST_DENS), 0);
+                p_i.p = k * (p_i.rho - rho_0);
+                //p_i.p = Math.max(k * (p_i.rho - rho_0), 0);
             }
 
             for (let i = 0; i < particles.length; i++) {
@@ -301,15 +306,15 @@
                     dir.normalize();
 
                     if (d <= H) {
-                        fpress.add(dir.multiplyScalar(-MASS * (p_i.p + p_j.p) / (2.0 * p_j.rho) * SPIKY_GRAD * Math.pow(H - d, 3.0)));
-                        fvisc.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(VISC * MASS * VISC_LAP * (H - d) / p_j.rho));
+                        fpress.add(dir.multiplyScalar(-m * (p_i.p + p_j.p) / (2.0 * p_j.rho) * grad_W_const * Math.pow(H - d, 3.0)));
+                        fvisc.add(p_j.velocity.clone().sub(p_i.velocity).multiplyScalar(nu * m * lapl_W_const * (H - d) / p_j.rho));
                     }
                 }   
 
                 // Gravity force
                 //f.add(new THREE.Vector3(0.0, 0.0, g * p_i.rho));
                 
-                //var fgrav = G.clone().multiplyScalar(MASS);
+                //var fgrav = G.clone().multiplyScalar(m);
 
                 //p_i.f = fpress.add(fvisc).add(fgrav);
                 if (isViscosity)
@@ -321,58 +326,58 @@
             for (let i = 0; i < particles.length; i++) {
                 p_i = particles[i];
 
-                p_i.velocity.add(p_i.f.clone().multiplyScalar(DT / p_i.rho));
+                p_i.velocity.add(p_i.f.clone().multiplyScalar(del_t / p_i.rho));
                 p_i.velocity.add(G);
-                p_i.position.add(p_i.velocity.clone().multiplyScalar(DT));
+                p_i.position.add(p_i.velocity.clone().multiplyScalar(del_t));
 
-                if (p_i.position.x - EPS / 2.0 < -boundary_x / 2.0) {
-                    p_i.velocity.x *= BOUND_DAMPING;
+                if (p_i.position.x - diam / 2.0 < -boundary_x / 2.0) {
+                    p_i.velocity.x *= damp;
                     if (isFriction) p_i.velocity.z *= friction;
-                    p_i.position.x = EPS / 2.0 - boundary_x / 2.0;
+                    p_i.position.x = diam / 2.0 - boundary_x / 2.0;
                 }
-                if (p_i.position.x + EPS / 2.0 > boundary_x / 2.0) {
-                    p_i.velocity.x *= BOUND_DAMPING;
+                if (p_i.position.x + diam / 2.0 > boundary_x / 2.0) {
+                    p_i.velocity.x *= damp;
                     if (isFriction) p_i.velocity.z *= friction;
-                    p_i.position.x = boundary_x / 2.0 - EPS / 2.0;
+                    p_i.position.x = boundary_x / 2.0 - diam / 2.0;
                 }
-                if (p_i.position.z - EPS / 2.0 < -boundary_y / 2.0) {
-                    p_i.velocity.z *= BOUND_DAMPING;
+                if (p_i.position.z - diam / 2.0 < -boundary_y / 2.0) {
+                    p_i.velocity.z *= damp;
                     if (isFriction) p_i.velocity.x *= friction;
-                    p_i.position.z = EPS / 2.0 - boundary_y / 2.0;
+                    p_i.position.z = diam / 2.0 - boundary_y / 2.0;
                 }
-                if (p_i.position.z + EPS / 2.0 > boundary_y / 2.0) {
-                    p_i.velocity.z *= BOUND_DAMPING;
+                if (p_i.position.z + diam / 2.0 > boundary_y / 2.0) {
+                    p_i.velocity.z *= damp;
                     if (isFriction) p_i.velocity.x *= friction;
-                    p_i.position.z = boundary_y / 2.0 - EPS / 2.0;
+                    p_i.position.z = boundary_y / 2.0 - diam / 2.0;
                 }
 
-                if (p_i.position.z > boundary_y / 2.0 - h - EPS / 2.0 && p_i.position.z < boundary_y - EPS / 2.0) {
-                  if (p_i.position.x > -boundary_x / 2.0 + x - EPS / 2.0 && p_i.position.x < -boundary_x / 2.0 + x + wall_x + EPS / 2.0) {
-                    var d1 = p_i.position.x + boundary_x / 2.0 - x + EPS / 2.0;
-                    var d2 = -boundary_x / 2.0 + x + wall_x + EPS - p_i.position.x;
-                    var d3 = p_i.position.z - boundary_y / 2.0 + h + EPS / 2.0;
+                if (p_i.position.z > boundary_y / 2.0 - h - diam / 2.0 && p_i.position.z < boundary_y - diam / 2.0) {
+                  if (p_i.position.x > -boundary_x / 2.0 + x - diam / 2.0 && p_i.position.x < -boundary_x / 2.0 + x + wall_x + diam / 2.0) {
+                    var d1 = p_i.position.x + boundary_x / 2.0 - x + diam / 2.0;
+                    var d2 = -boundary_x / 2.0 + x + wall_x + diam - p_i.position.x;
+                    var d3 = p_i.position.z - boundary_y / 2.0 + h + diam / 2.0;
 
                     if (d1 < d2 && d1 < d3) {
-                      p_i.velocity.x *= BOUND_DAMPING;
+                      p_i.velocity.x *= damp;
                       if (isFriction) p_i.velocity.z *= friction;
-                      p_i.position.x = -boundary_x / 2.0 + x - EPS / 2.0;
+                      p_i.position.x = -boundary_x / 2.0 + x - diam / 2.0;
                     }
                     else if (d2 < d1 && d2 < d3) {
-                      p_i.velocity.x *= BOUND_DAMPING;
+                      p_i.velocity.x *= damp;
                       if (isFriction) p_i.velocity.z *= friction;
-                      p_i.position.x = -boundary_x / 2.0 + x + wall_x + EPS / 2.0;
+                      p_i.position.x = -boundary_x / 2.0 + x + wall_x + diam / 2.0;
                     }
                     else {
-                      p_i.velocity.z *= BOUND_DAMPING;
+                      p_i.velocity.z *= damp;
                       if (isFriction) p_i.velocity.x *= friction;
-                      p_i.position.z = boundary_y / 2.0 - h - EPS / 2.0;
+                      p_i.position.z = boundary_y / 2.0 - h - diam / 2.0;
                     }
                   }
 
                 }
 
                 if (!hit) {
-                    if (p_i.position.x > boundary_x / 2.0 - home_x - EPS / 2.0 && p_i.position.z > boundary_y / 2.0 - home_y - EPS / 2.0) {
+                    if (p_i.position.x > boundary_x / 2.0 - home_x - diam / 2.0 && p_i.position.z > boundary_y / 2.0 - home_y - diam / 2.0) {
                         home_edge.material.color.set(0xFF0000);
                         home.material.color.set(0xFF5555);
                         hit = true;
@@ -422,8 +427,8 @@
         dist = Number(this.value);
         document.getElementById("SliderValue02").innerHTML = dist.toString();
         x = dist;
-        if (x < EPS) x = EPS;
-        else if (x > boundary_x - wall_x - EPS) x = boundary_x - wall_x - EPS;
+        if (x < diam) x = diam;
+        else if (x > boundary_x - wall_x - diam) x = boundary_x - wall_x - diam;
         
         scene.remove(scene.getObjectByName("wall_edge"));
         scene.remove(scene.getObjectByName("wall"));
